@@ -1,0 +1,966 @@
+<!doctype html>
+<!-- Fleet brief page template. scripts/brief.py pastes brief-latest.json into the data slot below and
+     writes the result to _overview/brief-latest.html. Edit this file, never the generated page.
+     Self-contained on purpose: no network, no fonts, no libraries, so it opens from disk anywhere. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet brief</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f1e9dc; --surface: #f8f2e8; --surface-2: #ece2d2; --line: #dacdb8;
+  --ink: #1a1815; --ink-2: #574e44; --ink-3: #7f7568;
+  --critical: #d03b3b; --serious: #e0782f; --warning: #fab219; --good: #0ca30c;
+  --critical-ink: #a32626; --serious-ink: #94410f; --critical-bg: #f9e6e0; --serious-bg: #f9e8d8;
+  --later: #8f877b; --parked: #cfc6b8; --clash: rgba(208, 59, 59, .07); --today: #b8500f;
+  --me-bg: #f4d9c0; --me-ink: #86340a; --away: rgba(86, 120, 124, .16); --away-line: rgba(86, 120, 124, .5);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #1c1b1a; --surface: #242321; --surface-2: #2d2b28; --line: #3d3a35;
+    --ink: #f2e5d4; --ink-2: #cdbfae; --ink-3: #9b8e7d;
+    --critical-ink: #f08a8a; --serious-ink: #f0a070; --critical-bg: #3a1d1c; --serious-bg: #3d2415;
+    --later: #8d8579; --parked: #4d4943; --clash: rgba(240, 138, 138, .08); --today: #e0782f;
+    --me-bg: #4a2a15; --me-ink: #f6d2b0; --away: rgba(120, 165, 170, .20); --away-line: rgba(120, 165, 170, .55);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1c1b1a; --surface: #242321; --surface-2: #2d2b28; --line: #3d3a35;
+  --ink: #f2e5d4; --ink-2: #cdbfae; --ink-3: #9b8e7d;
+  --critical-ink: #f08a8a; --serious-ink: #f0a070; --critical-bg: #3a1d1c; --serious-bg: #3d2415;
+  --later: #8d8579; --parked: #4d4943; --clash: rgba(240, 138, 138, .08); --today: #e0782f;
+  --me-bg: #4a2a15; --me-ink: #f6d2b0; --away: rgba(120, 165, 170, .20); --away-line: rgba(120, 165, 170, .55);
+}
+* { box-sizing: border-box; }
+mark.me { background: var(--me-bg); color: var(--me-ink); font-weight: 650; border-radius: 4px; padding: 0 4px; }
+.owner { color: var(--ink-2); }
+.owner.none { color: var(--ink-3); font-style: italic; }
+.pill.away { border-color: var(--away-line); background: var(--away); color: var(--ink); }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 22px; margin: 0; letter-spacing: -.01em; }
+h2 { font-size: 15px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); }
+section { margin-top: 28px; }
+.sub { color: var(--ink-2); margin-top: 4px; }
+.muted { color: var(--ink-3); }
+code { font: 12.5px ui-monospace, Consolas, monospace; background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
+.banner { border-radius: 8px; padding: 10px 14px; margin-top: 16px; border: 1px solid var(--line); background: var(--surface); }
+.banner.bad { border-color: var(--critical); background: var(--critical-bg); color: var(--critical-ink); font-weight: 600; }
+.banner.warn { border-color: var(--serious); background: var(--serious-bg); }
+
+/* filter */
+.filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+.chip { border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); border-radius: 999px;
+  padding: 4px 11px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.chip:hover { border-color: var(--ink-3); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip .n { font-variant-numeric: tabular-nums; opacity: .7; margin-left: 4px; }
+
+/* tiles */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.tile .v { font-size: 28px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.tile .k { color: var(--ink-2); font-size: 12.5px; margin-top: 2px; }
+.tile[data-tip] { cursor: help; }
+.tile.hot .v { color: var(--critical-ink); }
+@media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* milestone rows */
+.list { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.row { display: grid; grid-template-columns: 112px 1fr auto; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); align-items: start; }
+.row:first-child { border-top: 0; }
+.when { font-variant-numeric: tabular-nums; }
+.when b { display: block; font-size: 13.5px; }
+.when span { font-size: 12px; color: var(--ink-3); }
+.row.over .when span { color: var(--critical-ink); font-weight: 600; }
+.list.now .row { border-left: 4px solid transparent; }
+.list.now .row.over { border-left-color: var(--critical); }
+.pill[data-tip] { cursor: help; }
+#tip b + br, #tip b { margin-top: 2px; }
+.what .proj { font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.what .name { margin-top: 1px; }
+.what .meta { font-size: 12.5px; color: var(--ink-3); margin-top: 2px; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.pill { font-size: 11.5px; border-radius: 999px; padding: 2px 8px; white-space: nowrap; border: 1px solid var(--line); color: var(--ink-2); }
+.pill.over { border-color: var(--critical); color: var(--critical-ink); background: var(--critical-bg); font-weight: 600; }
+.pill.risk { border-color: var(--serious); color: var(--serious-ink); background: var(--serious-bg); font-weight: 600; }
+.pill.stale { border-style: dashed; }
+.empty { padding: 14px; color: var(--ink-3); }
+@media (max-width: 640px) { .row, .row.mt { grid-template-columns: 1fr; gap: 4px; } .pills { justify-content: flex-start; }
+}
+
+/* pending changes: collected on this page, applied only through the hub's /fleet update */
+.acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; align-items: center; }
+.act { border: 1px solid var(--line); background: transparent; color: var(--ink-2); border-radius: 6px; padding: 1px 8px;
+  font: inherit; font-size: 12px; cursor: pointer; }
+.act:hover { border-color: var(--ink-3); color: var(--ink); }
+.act.on { border-color: var(--today); color: var(--today); }
+.editor { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; align-items: center; }
+.editor input { font: inherit; font-size: 12.5px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); color: var(--ink); }
+.editor input[type="text"] { min-width: 220px; flex: 1; }
+.row.pend .name, li.pend .t { text-decoration: line-through; color: var(--ink-3); }
+.row.pend.move .name { text-decoration: none; }
+.pill.pending { border-color: var(--today); color: var(--today); }
+.tact { margin-left: 8px; }
+.tact + .tact { margin-left: 4px; }
+li .editor { margin: 4px 0 6px; }
+.editor textarea { font: inherit; font-size: 12.5px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); color: var(--ink); width: 100%; resize: vertical; }
+.editor label { font-size: 12.5px; color: var(--ink-2); display: flex; gap: 5px; align-items: center; }
+.editor .hint { flex-basis: 100%; font-size: 12px; color: var(--ink-3); }
+
+/* meetings in the lists: one thin line (date, shape, time, name, project) that opens on click */
+.row.mt { padding: 5px 14px; align-items: start; font-size: 13px; }
+.row.mt .when b { font-size: 12.5px; font-weight: 600; line-height: 20px; }
+.row.mt .mt-line { min-height: 20px; }
+.row.mt .what { min-width: 0; }
+.acts .pill.pending { white-space: normal; }
+.mt-line { all: unset; cursor: pointer; display: flex; flex-wrap: wrap; gap: 0 6px; align-items: center; border-radius: 4px; }
+.mt-line:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.mt-line:hover .mt-n { text-decoration: underline; }
+.mt-line .proj { font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.mt-line .chev { color: var(--ink-3); font-size: 11px; }
+.mt-line .sep { color: var(--ink-3); }
+.row.mt .acts { margin-top: 3px; }
+.mt-body { margin: 6px 0 4px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; }
+.mt-body .k { font-size: 11.5px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; margin-top: 6px; }
+.mt-body .k:first-child { margin-top: 0; }
+.mt-body ol { margin: 2px 0 0; padding-left: 20px; }
+.mt-body textarea { width: 100%; margin-top: 6px; font: 12px ui-monospace, Consolas, monospace; background: var(--surface-2); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px; resize: vertical; }
+.chip.mtgchip { margin-left: auto; }
+#pendbar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--serious-bg); border-top: 4px solid var(--serious);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, .12); padding: 10px 16px; z-index: 5; }
+#pendbar .in { max-width: 1180px; margin: 0 auto; }
+#pendbar .top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#pendbar .top b { margin-right: auto; color: var(--serious-ink); }
+#pendbar ul { margin: 8px 0 6px; padding: 0; list-style: none; max-height: 30vh; overflow: auto; font: 12.5px ui-monospace, Consolas, monospace; }
+#pendbar li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+#pendbar li span { flex: 1; word-break: break-word; }
+#pendbar textarea { width: 100%; box-sizing: border-box; font: 12px ui-monospace, Consolas, monospace; background: var(--surface-2);
+  color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px; resize: vertical; }
+#pendbar .hint { color: var(--ink-2); font-size: 12.5px; margin-top: 4px; }
+body.has-pend main { padding-bottom: 120px; }
+
+/* timeline */
+.tl { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px 8px; overflow-x: auto; }
+.tl-grid { min-width: 720px; position: relative; }
+.tl-row { display: grid; grid-template-columns: 220px 56px 1fr; align-items: center; min-height: 30px; border-top: 1px solid var(--line); }
+.tl-row.head { border-top: 0; min-height: 22px; font-size: 11.5px; color: var(--ink-3); }
+.tl-row .lbl { font-size: 12.5px; padding-right: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-row.parked .lbl { color: var(--ink-3); }
+.tl-row .lbl .sig { font: 11.5px ui-monospace, Consolas, monospace; color: var(--ink-3); margin-right: 6px; }
+.tl-over, .tl-track { position: relative; height: 30px; }
+.tl-over { border-right: 1px dashed var(--line); }
+.tl-track .wk { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--line); opacity: .6; }
+.tl-track .clash { position: absolute; top: 0; bottom: 0; background: var(--clash); }
+.tl-track .past { position: absolute; top: 0; bottom: 0; left: 0; background: var(--line); opacity: .35; }
+.tl-track .now { position: absolute; top: 0; bottom: 0; border-left: 2px solid var(--today); }
+.tl-track .off { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--away-line); border-right: 1px solid var(--away-line);
+  background: repeating-linear-gradient(45deg, var(--away) 0 5px, transparent 5px 9px); }
+.tl-row.away .lbl { color: var(--ink-2); font-style: italic; }
+.tl-row.away .tl-track .off span { position: static; transform: none; display: block; font-size: 11px; color: var(--ink); padding: 0 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-row.head .tl-track span { position: absolute; padding-left: 5px; white-space: nowrap; } /* starts at its Monday line */
+/* timeline markers: the button is a transparent hit area, the <i> inside is the shape in the urgency colour */
+.dot { position: absolute; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border: 0; background: transparent;
+  cursor: default; padding: 0; display: grid; place-items: center;
+  filter: drop-shadow(1px 0 0 var(--surface)) drop-shadow(-1px 0 0 var(--surface)) drop-shadow(0 1px 0 var(--surface)) drop-shadow(0 -1px 0 var(--surface)); }
+.dot i { position: relative; display: block; width: 12px; height: 12px; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.dot.s-client-meeting i, .dot.s-internal-meeting i { width: 12px; height: 12px; clip-path: circle(50%); }
+/* shape = kind (star deliverable, diamond other milestone, solid circle client meeting, open circle internal meeting);
+   colour = urgency, the same for all */
+.dot.s-internal-meeting i::after { content: ""; position: absolute; inset: 2.5px; background: var(--surface); clip-path: circle(50%); }
+.dot.s-deliverable i { width: 17px; height: 17px;
+  clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
+.dot:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+/* meetings from meetings.md: a smaller shape in a lower lane of the project's row, never urgency-coloured */
+.tl-row.has-mtg { min-height: 42px; }
+.tl-row.has-mtg .tl-over, .tl-row.has-mtg .tl-track { height: 42px; }
+.tl-row.has-mtg .dot:not(.mtg) { top: 34%; }
+.dot.mtg { top: 79%; width: 12px; height: 12px; margin: -6px 0 0 -6px; }
+.dot.mtg.s-client-meeting i, .dot.mtg.s-internal-meeting i { width: 9px; height: 9px; }
+.dot.mtg.s-internal-meeting i::after { inset: 2px; }
+.pill.client { border-color: var(--ink-3); color: var(--ink); }
+/* every list row: date, then the type marker (the timeline's own shape and urgency colour) and its word,
+   then the project (signature over name) in its own column */
+.tp { display: flex; align-items: center; gap: 5px; margin-top: 3px; font-size: 11.5px; color: var(--ink-2); font-weight: 600; white-space: nowrap; }
+.row .when span.tp { font-size: 11.5px; color: var(--ink-2); }
+.tp .dot { position: relative; top: auto; margin: 0; width: 16px; height: 16px; flex: none; filter: none; }
+.pj { font-size: 12px; color: var(--ink-2); font-weight: 600; overflow-wrap: anywhere; }
+.pj .sig { font: 11.5px ui-monospace, Consolas, monospace; color: var(--ink-3); font-weight: 400; margin-right: 6px; }
+.pill.caution { background: var(--warning); border-color: var(--warning); color: #1a1100; font-weight: 650; }
+.u-now { background: var(--critical); } .u-soon { background: var(--serious); }
+.u-later { background: var(--later); } .u-parked { background: var(--parked); }
+.u-other { background: var(--ink-3); } .dot i.u-done, .legend i.u-done { background: var(--ink-3); opacity: .4; } .dot i.u-later, .legend i.u-later { background: var(--warning); }
+.dot.risk { filter: drop-shadow(1.5px 0 0 var(--serious)) drop-shadow(-1.5px 0 0 var(--serious)) drop-shadow(0 1.5px 0 var(--serious)) drop-shadow(0 -1.5px 0 var(--serious)); }
+.legend .dot { position: relative; top: auto; margin: 0 3px 0 0; display: inline-grid; vertical-align: -4px; width: 16px; height: 16px; }
+.tl-row.head .tl-track span.heavy { color: var(--serious-ink); font-weight: 700; cursor: default; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-2); margin-top: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.legend i.box { border-radius: 2px; background: var(--clash); border: 1px solid var(--critical); }
+.legend i.line { border-radius: 0; width: 2px; background: var(--today); }
+.legend .dot i { border-radius: 0; margin: 0; vertical-align: 0; }
+.legend .dot.s-internal-meeting i::after { background: var(--bg); }
+.legend i.off {border-radius: 2px; border: 1px solid var(--away-line); background: repeating-linear-gradient(45deg, var(--away) 0 3px, transparent 3px 5px); }
+#tip { position: fixed; pointer-events: none; z-index: 10; max-width: 340px; background: var(--ink); color: var(--bg);
+  font-size: 12.5px; padding: 8px 10px; border-radius: 6px; display: none; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+#tip b { display: block; }
+
+/* full timeline: one vertical list for the whole span, week by week */
+.fl > summary { font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); }
+.fl-body { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 4px 14px 10px; }
+.fl-month { font-size: 13px; font-weight: 700; color: var(--ink-2); margin: 14px 0 4px; padding-bottom: 3px; border-bottom: 1px solid var(--line); }
+.fl-week { display: grid; grid-template-columns: 168px 1fr; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+.fl-month + .fl-week { border-top: 0; }
+.fl-week.now { border-left: 3px solid var(--today); padding-left: 8px; margin-left: -11px; }
+.fl-wk b { display: block; font-size: 13px; }
+.fl-wk span { display: block; font-size: 12px; color: var(--ink-3); }
+.fl-wk .heavy { color: var(--serious-ink); font-weight: 700; }
+.fl-wk .away { color: var(--me-ink); }
+.fl-item { display: grid; grid-template-columns: 86px 22px minmax(120px, 210px) 1fr auto; gap: 8px; align-items: baseline; padding: 3px 0; font-size: 13px; }
+.fl-item.done { color: var(--ink-3); }
+.fl-item.done .fl-name { text-decoration: line-through; }
+.fl-item.clash { background: var(--clash); border-radius: 4px; }
+.fl-item .fl-d { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.fl-item .fl-proj { font-size: 12px; font-weight: 600; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-item .fl-st { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.fl-item .fl-st .pill { margin-left: 6px; }
+.fl-item .dot { position: relative; top: auto; margin: 0; align-self: center; }
+.fl-gap { font-size: 12px; color: var(--ink-3); padding: 6px 0; border-top: 1px dashed var(--line); text-align: center; }
+@media (max-width: 720px) { .fl-week { grid-template-columns: 1fr; gap: 4px; } .fl-item { grid-template-columns: 62px 22px 1fr; } .fl-item .fl-proj { grid-column: 3; } .fl-item .fl-name { grid-column: 1 / -1; } .fl-item .fl-st { grid-column: 1 / -1; } }
+
+/* project cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.card.parked { opacity: .78; }
+.card h3 { font-size: 14.5px; margin: 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.card .facts { font-size: 12.5px; color: var(--ink-2); margin-top: 6px; }
+.card .next { margin-top: 8px; font-size: 13px; }
+.card .next .k { font-size: 11.5px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
+.card details { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
+.card summary { cursor: pointer; font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+.card ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+.card li { margin: 3px 0; }
+.card li .id { font: 11.5px ui-monospace, Consolas, monospace; color: var(--ink-3); margin-right: 4px; }
+.card li .by { display: block; font-size: 12px; color: var(--ink-3); }
+.card li .owner { font-size: 12px; margin-left: 4px; }
+.card .probs { margin-top: 8px; font-size: 12.5px; color: var(--serious-ink); }
+.group > summary { cursor: pointer; font-weight: 600; color: var(--ink-2); margin: 14px 0 8px; }
+footer { margin-top: 32px; font-size: 12px; color: var(--ink-3); }
+footer ul { padding-left: 18px; }
+.theme { float: right; }
+@media print {
+  body { background: #fff; } .filters, .theme { display: none; }
+  details > *:not(summary) { display: block !important; }
+}
+.wordmark { font: 400 30px/1 Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+  letter-spacing: -.01em; color: var(--ink); margin: 0 0 6px; position: relative; z-index: 0; }
+.wordmark .ili { position: relative; display: inline-block; }
+.wordmark .ili::before { content: ""; position: absolute; inset: -40% -35%; z-index: -1;
+  background: radial-gradient(closest-side, rgba(210, 98, 26, .7), rgba(210, 98, 26, 0)); }
+</style>
+</head>
+<body>
+<main id="app"><p>Loading brief…</p></main>
+<div id="tip" role="tooltip"></div>
+<script id="brief-data" type="application/json">__BRIEF_DATA__</script>
+<script>
+(function () {
+  "use strict";
+  var SCHEMA = 1;
+  var app = document.getElementById("app");
+  var D;
+  try { D = JSON.parse(document.getElementById("brief-data").textContent); }
+  catch (e) { app.innerHTML = '<div class="banner bad">This page has no brief data. Open it as written by <code>scripts/brief.py</code>, not the template.</div>'; return; }
+
+  // ---------- helpers
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function md(s) { // the small subset of Markdown project files use inline
+    return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>"); }
+  function plain(s) { return String(s || "").replace(/[*`]/g, ""); }
+  function day(iso) { var p = iso.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function iso(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  var DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function fmt(isoDate, withDow) { var d = day(isoDate); return (withDow ? DOW[d.getDay()] + " " : "") + MON[d.getMonth()] + " " + d.getDate(); }
+  function rel(n) {
+    if (n < -1) return (-n) + " days overdue"; if (n === -1) return "1 day overdue";
+    if (n === 0) return "today"; if (n === 1) return "tomorrow"; return "in " + n + " days"; }
+  function plural(n, w) { return n + " " + w + (n === 1 ? "" : "s"); }
+  function period(n) { return n % 7 === 0 ? plural(n / 7, "week") : plural(n, "day"); }
+  function range(t) { return fmt(t.start, true) + (t.end !== t.start ? " – " + fmt(t.end, true) : ""); }
+
+  // Owner text with the user's own name (hub-settings.md → me) marked.
+  var ME = (D.me || []).filter(Boolean).map(function (n) { return n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); });
+  var ME_RE = ME.length ? new RegExp("(^|[^A-Za-z0-9])(" + ME.join("|") + ")(?![A-Za-z0-9])", "gi") : null;
+  function owner(o) {
+    if (!o) return '<span class="owner none">Owner not set</span>';
+    var h = md(o);
+    if (ME_RE) h = h.replace(ME_RE, '$1<mark class="me">$2</mark>');
+    return '<span class="owner">Owner: ' + h + "</span>";
+  }
+
+  // ---------- failure and freshness
+  if (!D.ok) {
+    app.innerHTML = '<div class="wordmark" aria-label="familiar">fam<span class="ili">ili</span>ar</div><h1>Fleet brief — ' + esc(D.today) + '</h1><div class="banner bad">The brief failed: ' + md(D.reason) + '</div>';
+    return;
+  }
+  var head = '<button class="chip theme" id="theme" type="button">Theme</button><div class="wordmark" aria-label="familiar">fam<span class="ili">ili</span>ar</div><h1>Fleet brief — ' + esc(fmt(D.today, true)) + ", " + esc(D.today.slice(0, 4)) + "</h1>";
+  var banners = "";
+  if (D.schema !== SCHEMA) banners += '<div class="banner warn">This page expects brief data version ' + SCHEMA + " and got " + esc(D.schema) + ". Some parts may be missing.</div>";
+  var age = Math.round((day(iso(new Date())) - day(D.today)) / 86400000);
+  if (age > 0) banners += '<div class="banner warn">This brief is from ' + esc(D.today) + " (" + plural(age, "day") + " ago). Dates below are counted from that day. Run <code>python scripts/brief.py</code> in the hub for today&#39;s.</div>";
+
+  var projects = D.projects;
+  var byName = {}; projects.forEach(function (p) { byName[p.name] = p; });
+  // Paused, reference and closed projects stay out of everything but the folded section at the bottom.
+  function current(p) { return p.state !== "ok" || p.lifecycle === "active"; }
+  var live = projects.filter(current), parkedProjects = projects.filter(function (p) { return !current(p); });
+  var staleNames = live.filter(function (p) { return p.stale; }).map(function (p) { return p.name; });
+  var timeOff = D.time_off || [];
+  var ahead = period(D.settings.lookahead_days);
+
+  // ---------- state
+  var filter = null, showClient = true, showInternal = true, openMt = {}, copied = null;
+  var meetings = (D.meetings || []).filter(function (m) { return !m.parked; });
+  function withMe(text) { var h = esc(text); return ME_RE ? h.replace(ME_RE, '$1<mark class="me">$2</mark>') : h; }
+  function hoursOf(m) { return m.end ? m.start + "\u2013" + m.end : m.start; }
+  function shown(name) { return !filter || filter === name; }
+
+
+  // ---------- pending changes: marked here, applied only by pasting them into the hub's /fleet update
+  // Per hub: in Chromium every file:// page shares one storage origin, so a fixed key would mix two hubs' marks.
+  var STORE = "fleet-brief-pending:" + (D.hub || "default"), pending = [], editing = null, panelOpen = false;
+  function clean(s) { return String(s == null ? "" : s).replace(/[|\r\n]+/g, " ").trim(); }
+  function pkey(c) { return c.kind + "\u0001" + c.project + "\u0001" + c.id + (c.on ? "\u0001" + c.on : ""); } // on: the series date a meeting mark is about
+  function pend(kind, project, id, on) { return pending.filter(function (c) { return pkey(c) === pkey({ kind: kind, project: project, id: id, on: on }); })[0]; }
+  function msFind(project, id) { return D.milestones.filter(function (m) { return m.project === project && m.id === id; })[0]; }
+  function taskFind(project, id) { var p = byName[project]; if (!p || !p.tasks_read) return null;
+    return p.startable.concat(p.blocked).filter(function (t) { return t.id === id; })[0] || null; }
+  function lineOf(c) { return clean(c.project) + " | " + c.kind + " " + clean(c.id) + " | " + c.change + (c.reason ? " | reason: " + clean(c.reason) : ""); }
+  function meetingOpen(c) { // a meeting mark is open while the brief still shows the date it is about
+    var mv = /^move (?:(\d{4}-\d{2}-\d{2}) to )?(\d{4}-\d{2}-\d{2})(?: (\S+))?$/.exec(c.change), cx = /^cancel(?: (\d{4}-\d{2}-\d{2}))?$/.exec(c.change);
+    if (!mv && !cx) return false;
+    var rows = (D.meetings || []).filter(function (m) { return m.project === c.project && m.ref === c.id && (!c.on || m.date === c.on); });
+    if (!rows.length) return false; // the date is gone from the brief: the tracker has caught up
+    if (!mv) return true;
+    var timeDone = !mv[3] || hoursOf(rows[0]).replace("\u2013", "-") === mv[3];
+    if (!c.on) return !(rows[0].date === mv[2] && timeDone); // a single meeting: caught up on its new date and time
+    return mv[2] === c.on ? !(mv[3] && timeDone) : true; // a series date moved elsewhere leaves this date
+  }
+  // A meeting's rename, agenda and reminder marks sit beside a move or cancel of the same date: `on` is then
+  // "title", "agenda <date|standing>" or "remind <date>", the same key apply_change.py checks a batch by.
+  function meetingNoteOpen(c) {
+    var rows = (D.meetings || []).filter(function (m) { return m.project === c.project && m.ref === c.id; });
+    if (!rows.length) return false;
+    if (c.on === "title") return plain(rows[0].meeting).trim() !== c.change.slice(6);
+    var rm = /^remind (\d{4}-\d{2}-\d{2}) on (\d{4}-\d{2}-\d{2})$/.exec(c.change);
+    if (rm) { var r = rows.filter(function (m) { return m.date === rm[2]; })[0]; return !!r && r.agenda_remind !== rm[1] && r.agenda_status === "not set"; }
+    var ag = /^agenda (\S+) \| (items|none): (.*)$/.exec(c.change); if (!ag) return false;
+    function same(a) { return !!a && (ag[2] === "none" ? a.none === ag[3] : !a.none && a.items.join("; ") === ag[3]); }
+    if (ag[1] === "standing") return !rows.some(function (m) { return m.agenda && m.agenda.from === "standing" && same(m.agenda); });
+    var one = rows.filter(function (m) { return m.date === ag[1]; })[0];
+    return !!one && !(one.agenda && one.agenda.from === "dated" && same(one.agenda));
+  }
+  // A mark made before apply_change.py applied the same item is done, even where the brief cannot show it (a task's date).
+  function appliedSince(c) {
+    return !!c.made && (D.applied || []).some(function (a) { return a.project === c.project.toLowerCase() && a.kind === c.kind &&
+      a.id === c.id.toUpperCase() && a.on === (c.on || "") && a.at >= c.made; }); }
+  function stillOpen(c) { // drop a mark once the brief shows the tracker has caught up with it
+    if (!c || !c.kind || !c.project || !c.id || !c.change) return false;
+    if (appliedSince(c)) return false;
+    if (c.kind === "meeting") return /^(title|agenda |remind )/.test(c.on || "") ? meetingNoteOpen(c) : meetingOpen(c);
+    if (c.kind === "milestone") { var m = msFind(c.project, c.id); return !!m && !(c.change.indexOf("due ") === 0 && m.due === c.change.slice(4)) &&
+      !(c.change.indexOf("title ") === 0 && plain(m.name).trim() === c.change.slice(6)); }
+    var t = taskFind(c.project, c.id); return !!t && !(c.change.indexOf("title ") === 0 && plain(t.title).trim() === c.change.slice(6)); }
+  function stamp() { var d = new Date(); return iso(d) + "T" + [d.getHours(), d.getMinutes(), d.getSeconds()].map(function (n) { return String(n).padStart(2, "0"); }).join(":"); }
+  function save() { try { localStorage.setItem(STORE, JSON.stringify({ items: pending })); } catch (err) { /* marks last this view only */ } }
+  try { var kept = JSON.parse(localStorage.getItem(STORE) || "null"); if (kept && kept.items) pending = kept.items.filter(stillOpen); } catch (err) { pending = []; }
+  function setPending(c) { pending = pending.filter(function (x) { return pkey(x) !== pkey(c); }); if (c.change) { c.made = stamp(); pending.push(c); } save(); }
+  function pendingText() { return "Apply these changes with /fleet update:\n" + pending.map(lineOf).join("\n"); }
+  function actions(m, p) {
+    if (m.urgency === "parked") return "";
+    if (!m.id) return '<div class="acts"><span class="pill" tabindex="0" data-tip="' + esc("<b>No ID</b>This row has no ID (M-nn) in the project&#39;s timeline.md, so it cannot be changed from here. Add an ID in the project, then it can.") + '">No ID</span></div>';
+    var c = pend("milestone", m.project, m.id), key = pkey({ kind: "milestone", project: m.project, id: m.id });
+    var a = '<div class="acts" data-key="' + esc(key) + '">';
+    if (c) return a + '<span class="pill pending">Pending: ' + esc(pendLabel(c)) +
+      '</span><button type="button" class="act" data-act="undo" data-kind="milestone" data-project="' + esc(m.project) + '" data-id="' + esc(m.id) + '">Undo</button></div>';
+    var at = ' data-kind="milestone" data-project="' + esc(m.project) + '" data-id="' + esc(m.id) + '"';
+    a += '<button type="button" class="act" data-act="done"' + at + '>✓ Done</button>' +
+      '<button type="button" class="act" data-act="move"' + at + ' data-due="' + esc(m.due) + '">Move date</button>' +
+      '<button type="button" class="act" data-act="drop"' + at + '>Not needed</button>' +
+      '<button type="button" class="act" data-act="edit"' + at + '>Edit</button></div>';
+    if (editing === key + "\u0001edit") a += titleEditor(plain(m.name), at, "save-edit");
+    if (editing === key + "\u0001move") a += '<div class="editor" data-key="' + esc(key) + '"><input type="date" value="' + esc(m.due) + '" aria-label="New date">' +
+      '<input type="text" placeholder="Why it moved (required)" aria-label="Reason">' +
+      '<button type="button" class="act" data-act="save-move"' + at + '>Add</button><button type="button" class="act" data-act="cancel">Cancel</button></div>';
+    if (editing === key + "\u0001drop") a += '<div class="editor" data-key="' + esc(key) + '">' +
+      '<input type="text" placeholder="Why it is no longer needed (required)" aria-label="Reason">' +
+      '<button type="button" class="act" data-act="save-drop"' + at + '>Add</button><button type="button" class="act" data-act="cancel">Cancel</button></div>';
+    return a;
+  }
+
+  // ---------- meetings: Move date, Cancel meeting, Edit title and the agenda. The hub only edits meetings, never adds
+  // one. A series date is named by its series (S-nn) and the date; a single meeting by its own ID. An extra date cannot
+  // be cancelled by script. An agenda is for one date as the brief shows it, or the series' standing list.
+  function pendLabel(c) {
+    var ag = /^agenda (\S+) \| (items|none): (.*)$/.exec(c.change), rm = /^remind (\S+) on /.exec(c.change);
+    if (ag) return ag[2] === "none" ? "no agenda needed" : (ag[1] === "standing" ? "standing agenda, " : "agenda, ") + plural(ag[3].split("; ").length, "topic");
+    if (rm) return "remind me " + fmt(rm[1], true);
+    if (c.change.indexOf("title ") === 0) return "rename to “" + c.change.slice(6) + "”";
+    return c.change.replace("status not-applicable", "not needed").replace("status done", "done");
+  }
+  function titleEditor(now, at, save) {
+    return '<div class="editor"><input type="text" class="ed-name" value="' + esc(now) + '" aria-label="New name">' +
+      '<input type="text" class="ed-why" placeholder="Why it changed (required)" aria-label="Reason">' +
+      '<button type="button" class="act" data-act="' + save + '"' + at + '>Add</button><button type="button" class="act" data-act="cancel">Cancel</button></div>';
+  }
+  function mk(m) { return m.project + "\u0001" + m.ref + "\u0001" + m.date; } // one meeting date: what opens and what is edited
+  function mtFind(k) { return meetings.filter(function (m) { return mk(m) === k; })[0]; }
+  function topics(m) { return m.agenda && !m.agenda.none ? m.agenda.items : []; }
+  // Pasted by the user into a session in that project: the hub never starts /draft-document itself.
+  function deckPrompt(m) {
+    return "/draft-document deck — skeleton for “" + plain(m.meeting) + "” on " + m.date + " (" + m.project + ", meetings.md " + m.ref + "). " +
+      "One section per agenda topic: " + topics(m).join("; ") + ". Fill each from what is on file in this project (knowledge pages, trackers, " +
+      "recent meeting notes); mark anything not on file as a placeholder. Skeleton only, not a finished deck.";
+  }
+  function meetingEditor(m, act, at) {
+    var ed = '<div class="editor">', save = '<button type="button" class="act" data-act="save-' + act + '"' + at + '>Add</button><button type="button" class="act" data-act="cancel">Cancel</button></div>';
+    if (act === "mmove") return ed + '<input type="date" value="' + esc(m.date) + '" aria-label="New date">' +
+      '<input type="text" class="ed-time" placeholder="New time, e.g. 14:00-14:30 (optional)" aria-label="New time" value="">' +
+      '<input type="text" class="ed-why" placeholder="Why it moved (required)" aria-label="Reason">' + save;
+    if (act === "mdrop") return ed + '<input type="text" class="ed-why" placeholder="Why it is cancelled (required)" aria-label="Reason">' + save;
+    if (act === "mtitle") return titleEditor(plain(m.meeting), at, "save-mtitle");
+    if (act === "mnone") return ed + '<input type="text" class="ed-why" placeholder="Why no agenda is needed (required)" aria-label="Reason">' + save;
+    if (act === "mremind") return ed + '<label>Remind me on <input type="date" min="' + esc(D.today) + '" max="' + esc(m.date) + '" aria-label="Reminder date"></label>' + save;
+    return ed + '<textarea class="ed-items" rows="' + Math.max(3, topics(m).length + 1) + '" aria-label="Agenda topics, one per line">' + esc(topics(m).join("\n")) + "</textarea>" +
+      (m.series ? '<label><input type="checkbox" class="ed-standing"' + (m.agenda && m.agenda.from === "standing" ? " checked" : "") + "> Standing agenda for every " + esc(m.ref) + " date</label>" : "") +
+      '<span class="hint">One topic per line. A topic cannot contain ; or |.</span>' + save;
+  }
+  function meetingActs(m) {
+    if (m.parked) return "";
+    var on = m.source === "one-off" ? "" : m.date, c = pend("meeting", m.project, m.ref, on), k = mk(m);
+    var at = ' data-kind="meeting" data-project="' + esc(m.project) + '" data-id="' + esc(m.ref) + '" data-on="' + esc(on) + '" data-k="' + esc(k) + '"';
+    var title = pend("meeting", m.project, m.ref, "title"), remind = pend("meeting", m.project, m.ref, "remind " + m.date);
+    var dated = pend("meeting", m.project, m.ref, "agenda " + m.date), standing = pend("meeting", m.project, m.ref, "agenda standing"), agenda = dated || standing;
+    var act = editing && editing.indexOf(k + "\u0001") === 0 ? editing.slice(k.length + 1) : "", flag = m.agenda_due && !agenda && !remind;
+    // A series-wide mark (rename, standing agenda) shows on the series' first date in the brief only.
+    var a = "", first = meetings.filter(function (x) { return x.project === m.project && x.ref === m.ref; })[0] === m;
+    [c, first && title, dated, first && standing, remind].forEach(function (x) { if (x) a += '<span class="pill pending">Pending: ' + esc(pendLabel(x)) + '</span><button type="button" class="act" data-act="undo"' +
+      at.replace(/ data-on="[^"]*"/, ' data-on="' + esc(x.on || "") + '"') + ">Undo</button>"; });
+    // The agenda-due flag sits on the thin row itself: it is a thing to do, shown even with the Meetings chip off.
+    if (flag) a += '<button type="button" class="act" data-act="magenda"' + at + ">Set agenda</button>" +
+      '<button type="button" class="act" data-act="mnone"' + at + '>No agenda needed</button><button type="button" class="act" data-act="mremind"' + at + ">Remind me on…</button>";
+    var h = a ? '<div class="acts">' + a + "</div>" : "", fromFlag = flag && /^(magenda|mnone|mremind)$/.test(act);
+    if (fromFlag) h += meetingEditor(m, act, at);
+    if (!openMt[k]) return h;
+    var b = '<div class="mt-body"><div class="k">' + esc(rel(m.days)) + " · " + (m.kind === "client" ? "client" : "internal") + " meeting · " + esc(m.ref) +
+      (m.source === "moved" ? " · moved from " + esc(fmt(m.moved_from, true)) : "") + (m.source === "extra" ? " · extra date" : "") +
+      (m.milestone ? " · for " + esc(m.milestone) : "") + "</div>" + (m.note ? '<div class="muted">' + md(m.note) + "</div>" : "");
+    b += '<div class="k">Attendees</div><div>' + (m.attendees && m.attendees.length ? withMe(m.attendees.join(", ")) : '<span class="muted">None listed</span>') + "</div>";
+    b += '<div class="k">Agenda' + (m.agenda && m.agenda.from === "standing" ? " — the series&#39; standing list" : "") + "</div>" +
+      (!m.agenda ? '<div class="muted">Not set' + (m.agenda_remind ? "; you asked to be reminded " + esc(fmt(m.agenda_remind, true)) : "") + ".</div>" :
+        m.agenda.none ? "<div>None needed: " + md(m.agenda.none) + "</div>" : "<ol>" + m.agenda.items.map(function (t) { return "<li>" + md(t) + "</li>"; }).join("") + "</ol>");
+    var btn = "";
+    if (!agenda && !flag) btn += '<button type="button" class="act" data-act="magenda"' + at + ">" + (topics(m).length ? "Edit agenda" : "Set agenda") + "</button>" +
+      (m.agenda && m.agenda.none ? "" : '<button type="button" class="act" data-act="mnone"' + at + ">No agenda needed</button>") +
+      (m.agenda_status === "not set" && !remind && D.settings.agenda_kinds !== "none" ? '<button type="button" class="act" data-act="mremind"' + at + ">Remind me on…</button>" : "");
+    if (topics(m).length) btn += '<button type="button" class="act" data-act="deck"' + at + ">Copy deck prompt</button>";
+    if (!c) btn += '<button type="button" class="act" data-act="mmove"' + at + ">Move date</button>" +
+      (m.source === "extra" ? "" : '<button type="button" class="act" data-act="mdrop"' + at + ">Cancel meeting</button>");
+    if (!title) btn += '<button type="button" class="act" data-act="mtitle"' + at + ">Edit title</button>";
+    b += '<div class="acts">' + btn + "</div>" + (act && !fromFlag ? meetingEditor(m, act, at) : "");
+    if (copied === k) b += '<textarea readonly rows="4" aria-label="Deck prompt">' + esc(deckPrompt(m)) + '</textarea><div class="muted">Copied. Paste it into a session in ' +
+      esc(m.project) + " to build the skeleton there; the hub never starts it.</div>";
+    return h + b + "</div>";
+  }
+
+  function panel() {
+    if (!pending.length) { document.body.classList.remove("has-pend"); return ""; }
+    document.body.classList.add("has-pend");
+    var h = '<div id="pendbar"><div class="in"><div class="top"><b>' + plural(pending.length, "pending change") + " — not applied yet</b>" +
+      '<button type="button" class="chip" data-act="toggle">' + (panelOpen ? "Hide" : "Review") + "</button>" +
+      '<button type="button" class="chip" data-act="copy">Copy for the hub</button><button type="button" class="chip" data-act="clear">Clear all</button></div>';
+    if (panelOpen) h += "<ul>" + pending.map(function (c, i) { return "<li><span>" + esc(lineOf(c)) + '</span><button type="button" class="act" data-act="remove" data-i="' + i + '">Remove</button></li>'; }).join("") + "</ul>" +
+      '<textarea id="pendtext" readonly rows="' + Math.min(8, pending.length + 1) + '">' + esc(pendingText()) + "</textarea>";
+    return h + '<div class="hint">This page changes nothing in your projects. Copy these lines, paste them into a session in the hub, and say yes to the preview it shows.</div></div></div>';
+  }
+  function copyText(text) {
+    function fallback() { var t = document.createElement("textarea"); t.value = text; t.style.position = "fixed"; t.style.opacity = "0";
+      document.body.appendChild(t); t.select(); try { document.execCommand("copy"); } catch (err) { /* the text is also shown to copy by hand */ } t.remove(); }
+    try { if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).catch(fallback); } catch (err) { /* fall through */ }
+    fallback();
+  }
+
+  // ---------- sections
+  function mtgOn(m) { return m.kind === "client" ? showClient : showInternal; }
+  function whenClass(m) { return m.days < 0 ? " over" : ""; }
+  var TYPE_WORD = { deliverable: "Deliverable", other: "Milestone", "client-meeting": "Client", "internal-meeting": "Internal" };
+  function tint(m) { return m.window === "overdue" ? "u-now" : m.urgency === "soon" ? "u-later" : "u-" + m.urgency; }
+  // the timeline's marker for this item (shape = kind, colour = urgency) with its word, shown under the date
+  function typeTag(shape, cls, tip) {
+    return '<span class="tp" title="' + esc(tip) + '"><span class="dot s-' + shape + '"><i class="' + cls + '"></i></span>' + esc(TYPE_WORD[shape] || "Milestone") + "</span>";
+  }
+  function projCol(name) {
+    var q = byName[name] || {};
+    return '<div class="pj" title="' + esc(name) + '">' + (q.signature ? '<span class="sig">' + esc(q.signature) + "</span>" : "") + '<span class="pn">' + esc(name) + "</span></div>";
+  }
+  function milestoneRow(m) {
+    var p = byName[m.project] || {};
+    var pills = "";
+    if (m.window === "overdue") pills += '<span class="pill over">✕ Overdue</span>';
+    if (m.at_risk) pills += '<span class="pill risk" tabindex="0" data-tip="' + esc("<b>At risk: what the timeline says</b>" + (m.risk_reason ? md(m.risk_reason) : "No reason written in this project&#39;s timeline. Add a note under its table, for example &quot;M-02 is at risk because …&quot;.")) + '">▲ At risk</span>';
+    if (m.time_off) pills += '<span class="pill away" tabindex="0" data-tip="' + esc("<b>During your time off</b>" + md(m.time_off)) + '">✈ During your time off</span>';
+    if (p.stale) pills += '<span class="pill stale" tabindex="0" data-tip="' + esc(md(p.stale_text)) + '">Data ' + (p.stale === "stale" ? "stale" : "undated") + "</span>";
+    if (m.urgency === "parked") pills += '<span class="pill">' + esc(p.lifecycle) + "</span>";
+    var meta = owner(m.owner) + " · " + (m.status ? "Status: " + md(m.status) : "Status not set");
+    var mark = pend("milestone", m.project, m.id), moving = mark && /^(due|title) /.test(mark.change);
+    return '<div class="row' + whenClass(m) + (mark ? " pend" + (moving ? " move" : "") : "") + '"><div class="when"><b>' + esc(fmt(m.due, true)) + "</b><span>" + esc(rel(m.days)) + "</span>" +
+      typeTag(m.shape || "other", tint(m), (m.type || "Milestone")) + "</div>" +
+      '<div class="what">' + projCol(m.project) + '<div class="name">' + md(m.name) + '</div><div class="meta">' + meta + "</div>" + actions(m, p) + "</div>" +
+      '<div class="pills">' + pills + "</div></div>";
+  }
+  // A list holds milestones and, as thin rows, meetings (from each project's meetings.md), in date order;
+  // a milestone comes before a meeting on the same day.
+  function list(rows, emptyText, cls) {
+    rows = rows.slice().sort(function (a, b) { var x = a.due || a.date, y = b.due || b.date;
+      return x < y ? -1 : x > y ? 1 : ("meeting" in a) - ("meeting" in b) || (a.start || "").localeCompare(b.start || ""); });
+    return '<div class="list' + (cls ? " " + cls : "") + '">' + (rows.length ? rows.map(function (r) { return "meeting" in r ? meetingRow(r) : milestoneRow(r); }).join("") :
+      '<div class="empty">' + esc(emptyText) + "</div>") + "</div>";
+  }
+
+  function meetingRow(m) {
+    var k = mk(m), open = !!openMt[k];
+    var pills = "";
+    if (m.agenda_due) pills += '<span class="pill caution" tabindex="0" data-tip="' + esc("<b>Agenda not set</b>" + (m.agenda_remind ? "You asked to be reminded today." :
+      "Agendas are due " + plural(D.settings.agenda_lead_days, "business day") + " ahead (brief-settings.md → agenda_lead_days).")) + '">▲ Agenda not set</span>';
+    else if (m.agenda_status === "set") pills += '<span class="pill">Agenda set</span>';
+    else if (m.agenda_status === "standing") pills += '<span class="pill">Agenda: standing only</span>';
+    else if (m.agenda_status === "none needed") pills += '<span class="pill">No agenda needed</span>';
+    else if (m.agenda_remind) pills += '<span class="pill">Agenda reminder ' + esc(fmt(m.agenda_remind, true)) + "</span>";
+    if (m.overlaps && m.overlaps.length) pills += '<span class="pill over" tabindex="0" data-tip="' + esc("<b>Overlaps</b>" + m.overlaps.map(esc).join("<br>")) + '">▲ Overlap</span>';
+    if (m.time_off) pills += '<span class="pill away" tabindex="0" data-tip="' + esc("<b>During your time off</b>" + md(m.time_off)) + '">✈ During your time off</span>';
+    return '<div class="row mt k-' + (m.kind === "client" ? "client" : "internal") + whenClass(m) + '"><div class="when"><b>' + esc(fmt(m.date, true)) + "</b>" + typeTag(m.shape, "u-other", (m.kind === "client" ? "Client" : "Internal") + " meeting") + "</div>" +
+      '<div class="what">' + projCol(m.project) + '<button type="button" class="mt-line" data-act="mtopen" data-k="' + esc(k) + '" aria-expanded="' + open + '">' +
+      '<span>' + esc(hoursOf(m)) + '</span><span class="sep">·</span><span class="mt-n">' + md(m.meeting) +
+      '</span><span class="chev">' + (open ? "▾" : "▸") + "</span></button>" +
+      meetingActs(m) + '</div><div class="pills">' + pills + "</div></div>";
+  }
+
+  function clashDays(ms) { // days with 2+ active projects due, from the milestones on show
+    var by = {};
+    ms.forEach(function (m) { if (m.window !== "overdue") (by[m.due] = by[m.due] || {})[m.project] = 1; });
+    return Object.keys(by).sort().filter(function (d) { return Object.keys(by[d]).length >= 2; })
+      .map(function (d) { return { date: d, projects: Object.keys(by[d]).sort() }; });
+  }
+
+  // The timeline always covers whole work weeks: Monday of this week through Friday of week N (6), whatever today is.
+  // Saturday and Sunday have no column: a weekend date sits on that Friday (on the next Monday for a start date).
+  var WEEKS = D.timeline_weeks || 6;
+  function tlRange() {
+    var t = day(D.today), mon = new Date(t.getFullYear(), t.getMonth(), t.getDate() - ((t.getDay() + 6) % 7));
+    var fri = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 7 * (WEEKS - 1) + 4);
+    return { start: mon, last: fri, end: new Date(fri.getFullYear(), fri.getMonth(), fri.getDate() + 1) }; // end is exclusive
+  }
+
+  function timeline(ms) {
+    var R = tlRange(), start = R.start, end = R.end;
+    var span = WEEKS * 5;
+    function at(isoDate, fwd) { // work days from the first Monday
+      var n = Math.round((day(isoDate) - start) / 86400000), w = Math.floor(n / 7), dw = n - w * 7;
+      return w * 5 + (dw > 4 ? (fwd ? 5 : 4) : dw);
+    }
+    function x(isoDate, fwd) { return Math.min(100, Math.max(0, (at(isoDate, fwd) + 0.5) / span * 100)); } // centre of that day
+    var dayW = 100 / span;
+    var rows = live.filter(function (p) { return p.state === "ok" && shown(p.name); });
+    ms = ms.filter(function (m) { return m.window === "overdue" || day(m.due) < new Date(end.getFullYear(), end.getMonth(), end.getDate() + 2); }); // through the last weekend
+    // A heavy week: HEAVY or more deliverables due in it, across the projects shown (it follows the filter).
+    var HEAVY = D.heavy_week || 3, perWeek = {};
+    ms.forEach(function (m) {
+      if (m.shape !== "deliverable" || m.window === "overdue" || !rows.some(function (p) { return p.name === m.project; })) return;
+      var w = Math.floor(at(m.due) / 5); if (w < 0 || w >= WEEKS) return;
+      (perWeek[w] = perWeek[w] || []).push(m);
+    });
+    var ticks = "", heads = "";
+    for (var d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
+      if (d.getDay() === 1) { var i = iso(d), px = at(i) / span * 100, list = perWeek[Math.floor(at(i) / 5)] || [];
+        ticks += '<div class="wk" style="left:' + px + '%"></div>';
+        if (list.length >= HEAVY) {
+          heads += '<span class="heavy" tabindex="0" style="left:' + px + '%" data-tip="' + esc("<b>Heavy week: " + list.length + " deliverables</b>" +
+            list.map(function (m) { return esc(fmt(m.due)) + " · " + esc(m.project) + " · " + md(m.name); }).join("<br>")) + '">⚠ ' + esc(fmt(i)) + "</span>";
+        } else heads += '<span style="left:' + px + '%">' + esc(fmt(i)) + "</span>";
+      }
+    }
+    var lastDay = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 2);
+    // Completed milestones stay on the timeline, greyed. They carry no urgency and no actions.
+    function cdots(arr) {
+      var count = {}, seen = {};
+      arr.forEach(function (c) { count[c.due] = (count[c.due] || 0) + 1; });
+      return arr.map(function (c) {
+        var nth = seen[c.due] = (seen[c.due] || 0) + 1, off = count[c.due] > 1 ? (nth - 1 - (count[c.due] - 1) / 2) * 13 : 0;
+        return '<button type="button" class="dot done s-' + (c.shape || "other") + '" style="left:calc(' + x(c.due) + '% + ' + off + 'px)" data-cm="' + D.completed.indexOf(c) +
+          '" aria-label="' + esc(c.due + " done: " + plain(c.name)) + '"><i class="u-done"></i></button>'; }).join("");
+    }
+    function mineMeetings(name) { return meetings.filter(function (m) { return mtgOn(m) && m.project === name && day(m.date) < lastDay; }); }
+    function mdots(arr) {
+      var count = {}, seen = {};
+      arr.forEach(function (m) { count[m.date] = (count[m.date] || 0) + 1; });
+      return arr.map(function (m) {
+        var nth = seen[m.date] = (seen[m.date] || 0) + 1, off = count[m.date] > 1 ? (nth - 1 - (count[m.date] - 1) / 2) * 11 : 0;
+        return '<button type="button" class="dot mtg s-' + m.shape + '" style="left:calc(' + x(m.date) + '% + ' + off + 'px)" data-mt="' + D.meetings.indexOf(m) +
+          '" aria-label="' + esc(m.date + " " + m.kind + " meeting: " + plain(m.meeting)) + '"><i class="u-other"></i></button>'; }).join("");
+    }
+    var past = at(D.today) > 0 ? '<div class="past" style="width:' + at(D.today) * dayW + '%"></div>' : "";
+    function bands(label) {
+      return timeOff.map(function (t) {
+        var l = Math.max(0, x(t.start < D.today ? D.today : t.start, true) - dayW / 2), r = Math.min(100, x(t.end) + dayW / 2);
+        if (r <= l) return "";
+        return '<div class="off" style="left:' + l + "%;width:" + (r - l) + '%" data-tip="' + esc("<b>Your time off</b>" + esc(range(t)) + (t.note ? "<br>" + md(t.note) : "")) + '">' +
+          (label ? "<span>✈ " + esc(t.note || "Time off") + "</span>" : "") + "</div>";
+      }).join("");
+    }
+    var clashes = clashDays(ms).map(function (c) {
+      return '<div class="clash" style="left:' + (x(c.date) - dayW / 2) + "%;width:" + dayW + '%" title="' + esc(c.date + ": " + c.projects.join(", ")) + '"></div>';
+    }).join("");
+    var html = '<div class="tl"><div class="tl-grid"><div class="tl-row head"><div></div><div>Overdue</div><div class="tl-track">' + heads + "</div></div>";
+    if (timeOff.length) html += '<div class="tl-row away"><div class="lbl">Your time off</div><div class="tl-over"></div><div class="tl-track">' + bands(true) + ticks + "</div></div>";
+    rows.forEach(function (p) {
+      var mine = ms.filter(function (m) { return m.project === p.name; });
+      var over = mine.filter(function (m) { return m.window === "overdue"; });
+      // Markers due the same day in one row sit side by side, 13px apart, centred on the day; a deliverable is
+      // drawn last so nothing covers its star.
+      // Every marker carries the urgency colour: red now or overdue, gold otherwise ("soon" has no colour of its own).
+      var tint = function (m) { return m.window === "overdue" ? "u-now" : m.urgency === "soon" ? "u-later" : "u-" + m.urgency; };
+      var dots = function (arr, pos, spread) {
+        var count = {}, seen = {};
+        arr = arr.slice().sort(function (a, b) { return (a.shape === "deliverable") - (b.shape === "deliverable"); });
+        arr.forEach(function (m) { count[m.due] = (count[m.due] || 0) + 1; });
+        return arr.map(function (m, k) {
+        var nth = seen[m.due] = (seen[m.due] || 0) + 1, off = spread && count[m.due] > 1 ? (nth - 1 - (count[m.due] - 1) / 2) * 13 : 0;
+        return '<button type="button" class="dot s-' + (m.shape || "other") + (m.at_risk ? " risk" : "") + '" style="left:calc(' + pos(m, k) + '% + ' + off + 'px)" data-m="' + D.milestones.indexOf(m) + '" aria-label="' + esc(m.due + " " + (m.type ? m.type + ": " : "") + plain(m.name)) + '"><i class="' + tint(m) + '"></i></button>'; }).join(""); };
+      var mtgs = mineMeetings(p.name);
+      var finished = (D.completed || []).filter(function (c) { return c.project === p.name && day(c.due) < new Date(end.getFullYear(), end.getMonth(), end.getDate() + 2); });
+      html += '<div class="tl-row' + (mtgs.length ? " has-mtg" : "") + '"><div class="lbl" title="' + esc((p.signature ? p.signature + " \u00b7 " : "") + p.name) + '">' +
+        (p.signature ? '<span class="sig">' + esc(p.signature) + "</span>" : "") + esc(p.name) + "</div>" +
+        '<div class="tl-over">' + dots(over, function (m, k) { return 20 + Math.min(k, 4) * 14; }) + "</div>" +
+        '<div class="tl-track">' + past + ticks + clashes + '<div class="now" style="left:' + (at(D.today) / span * 100 + dayW / 2) + '%"></div>' +
+        cdots(finished) + dots(mine.filter(function (m) { return m.window !== "overdue"; }), function (m) { return x(m.due); }, true) + mdots(mtgs) + "</div></div>";
+    });
+    if (!rows.length) html += '<div class="empty">No active project to show.</div>';
+    html += "</div></div>";
+    function swatch(u) { return '<i class="' + u + '"></i>'; }
+    var anyDone = (D.completed || []).length > 0;
+    html += '<div class="legend"><span>' + swatch("u-now") + "Red: overdue or due within " + D.now_days + " days</span><span>" + swatch("u-later") +
+      'Gold: later</span>' + (anyDone ? "<span>" + swatch("u-done") + "Grey: completed</span>" : "") + '<span><i class="box"></i>2+ projects due the same day</span>' +
+      (timeOff.length ? '<span><i class="off"></i>Your time off</span>' : "") + '<span><i class="line"></i>Brief date</span></div>' +
+      '<div class="legend">' + [["deliverable", "Deliverable"], ["other", "Other milestone"], ["client-meeting", "Client meeting"], ["internal-meeting", "Internal meeting"]]
+        .map(function (s) { return '<span><span class="dot s-' + s[0] + '"><i class="u-other"></i></span>' + s[1] + "</span>"; }).join("") +
+      '<span><b style="color:var(--serious-ink)">\u26A0</b>&nbsp;Week with ' + (D.heavy_week || 3) + "+ deliverables</span>" +
+      ((showClient || showInternal) && meetings.length ? '<span class="muted">Small shapes in the lower lane: meetings from meetings.md</span>' : "") + "</div>";
+    return html;
+  }
+
+  // A task: ✓ Done, Move date and Edit. Task rows carry no date, so Move date starts empty.
+  function task(t, i, top, proj) {
+    var mark = proj && t.id && pend("task", proj, t.id), struck = mark && mark.change === "done";
+    var at = proj && t.id ? ' data-kind="task" data-project="' + esc(proj) + '" data-id="' + esc(t.id) + '"' : "", key = at && pkey({ kind: "task", project: proj, id: t.id });
+    var ed = at && editing === key + "tmove" ? '<div class="editor"><input type="date" aria-label="New date">' +
+        '<input type="text" class="ed-why" placeholder="Why it moved (required)" aria-label="Reason">' +
+        '<button type="button" class="act" data-act="save-tmove"' + at + '>Add</button><button type="button" class="act" data-act="cancel">Cancel</button></div>' :
+      at && editing === key + "tedit" ? titleEditor(plain(t.title), at, "save-tedit") : "";
+    return "<li" + (i >= top || mark ? ' class="' + (i >= top ? "more" : "") + (struck ? " pend" : "") + '"' + (i >= top ? " hidden" : "") : "") + ">" +
+      (t.id ? '<span class="id">' + esc(t.id) + "</span>" : "") + '<span class="t">' + md(t.title) + "</span>" +
+      ("owner" in t ? " " + owner(t.owner) : "") +
+      (at && !t.blocked_by ? (mark ? (struck ? "" : ' <span class="pill pending">Pending: ' + esc(pendLabel(mark)) + "</span>") +
+          '<button type="button" class="act tact" data-act="undo"' + at + '>Undo</button>' :
+        '<button type="button" class="act tact" data-act="tdone"' + at + '>✓ Done</button>' +
+        '<button type="button" class="act tact" data-act="tmove"' + at + '>Move date</button><button type="button" class="act tact" data-act="tedit"' + at + ">Edit</button>") : "") +
+      (proj && !t.id && !t.blocked_by ? ' <span class="pill" tabindex="0" data-tip="' + esc("<b>No ID</b>This task has no ID (T-nn) in the project&#39;s tasks.md, so it cannot be changed from here.") + '">No ID</span>' : "") +
+      (t.blocked_by ? '<span class="by">Waiting on: ' + t.blocked_by.map(md).join("; ") + "</span>" : "") + ed + "</li>";
+  }
+
+  function card(p) {
+    if (p.state !== "ok") return '<div class="card"><h3>' + esc(p.name) + ' <span class="pill over">Not readable</span></h3><div class="probs">' + p.problems.map(md).join("<br>") + "</div></div>";
+    var parked = p.lifecycle !== "active";
+    var next = D.milestones.filter(function (m) { return m.project === p.name && m.window !== "overdue"; })[0];
+    var over = D.milestones.filter(function (m) { return m.project === p.name && m.window === "overdue"; }).length;
+    var top = D.settings.top_per_project;
+    var badges = '<span class="pill">' + esc(p.lifecycle) + "</span>" +
+      (p.stale ? '<span class="pill stale" tabindex="0" data-tip="' + esc(md(p.stale_text)) + '">' + (p.stale === "stale" ? "Stale" : "Undated") + "</span>" : "") +
+      (over ? '<span class="pill over">' + over + " overdue</span>" : "");
+    var facts = "Snapshot " + (p.last_updated ? esc(p.last_updated) + " (" + plural(p.age_days, "day") + " old)" : "has no date") +
+      (p.status ? " · " + md(p.status) : "");
+    var h = '<div class="card' + (parked ? " parked" : "") + '"><h3>' + esc(p.name) + " " + badges + '</h3><div class="facts">' + facts + "</div>";
+    h += '<div class="next"><div class="k">Next dated milestone</div>' + (next ? "<b>" + esc(fmt(next.due, true)) + "</b> (" + esc(rel(next.days)) + ") — " + md(next.name) + "<br>" + owner(next.owner) : '<span class="muted">None in the next ' + esc(ahead) + "</span>") + "</div>";
+    var nextMeeting = meetings.filter(function (m) { return m.project === p.name; })[0];
+    if (nextMeeting) h += '<div class="next"><div class="k">Next meeting</div><b>' + esc(fmt(nextMeeting.date, true)) + "</b> (" + esc(rel(nextMeeting.days)) + ") \u2014 " + esc(hoursOf(nextMeeting)) + " " + md(nextMeeting.meeting) + "</div>";
+    if (!p.tasks_read) h += '<div class="facts">Tasks not read.</div>';
+    else {
+      h += "<details" + (!parked && p.startable.length ? " open" : "") + "><summary>Startable now (" + p.startable.length + ")</summary><ul>" +
+        p.startable.map(function (t, i) { return task(t, i, top, p.name); }).join("") + "</ul>" +
+        (p.startable.length > top ? '<button type="button" class="chip" data-more>Show all ' + p.startable.length + "</button>" : "") + "</details>";
+      if (p.blocked.length) h += "<details><summary>Blocked (" + p.blocked.length + ")</summary><ul>" +
+        p.blocked.map(function (t) { return task(t, 0, 1); }).join("") + "</ul></details>";
+    }
+    if (p.problems.length) h += '<div class="probs">▲ ' + p.problems.map(md).join("<br>▲ ") + "</div>";
+    return h + "</div>";
+  }
+
+  // ---------- full timeline: every dated milestone of the active projects, whole span, week by week (collapsed by default)
+  var fullOpen = false;
+  var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  function mondayOf(isoDate) { var d = day(isoDate); return iso(new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7))); }
+  function plusWeeks(isoDate, n) { var d = day(isoDate); return iso(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * n)); }
+  function fullTimeline() {
+    var F = D.full; if (!F) return "";
+    var items = (F.milestones || []).filter(function (m) { return m.urgency !== "parked" && shown(m.project); }).map(function (m) { return { m: m, done: false }; })
+      .concat((F.done || []).filter(function (c) { return shown(c.project); }).map(function (c) { return { m: c, done: true }; }));
+    var weeks = {}, off = {}, thisWeek = mondayOf(D.today), byDay = {};
+    items.forEach(function (it) { var wk = mondayOf(it.m.due); (weeks[wk] = weeks[wk] || []).push(it);
+      if (!it.done) (byDay[it.m.due] = byDay[it.m.due] || {})[it.m.project] = 1; });
+    (F.time_off || []).forEach(function (t) { for (var w = mondayOf(t.start); w <= t.end; w = plusWeeks(w, 1)) (off[w] = off[w] || []).push(t); });
+    if (!items.length && !Object.keys(off).length) return "";
+    var keys = Object.keys(weeks).concat(Object.keys(off)); if (keys.indexOf(thisWeek) < 0) keys.push(thisWeek);
+    keys = keys.filter(function (k, i) { return keys.indexOf(k) === i; }).sort();
+    var h = '<details class="group fl"' + (fullOpen ? " open" : "") + "><summary>Full timeline \u2014 " + esc(fmt(F.start, true)) + " to " + esc(fmt(F.end, true)) +
+      " (" + plural(items.length, "dated milestone") + ')</summary><div class="fl-body">', month = "", prev = null;
+    keys.forEach(function (w) {
+      if (prev && w > plusWeeks(prev, 1)) { var q = Math.round((day(w) - day(prev)) / 604800000) - 1; h += '<div class="fl-gap">' + plural(q, "quiet week") + "</div>"; }
+      prev = w;
+      var d = day(w), mname = MONTHS[d.getMonth()] + " " + d.getFullYear();
+      if (mname !== month) { month = mname; h += '<div class="fl-month">' + esc(mname) + "</div>"; }
+      var rows = (weeks[w] || []).slice().sort(function (a, b) { return a.m.due < b.m.due ? -1 : a.m.due > b.m.due ? 1 : a.m.project < b.m.project ? -1 : a.m.project > b.m.project ? 1 : 0; });
+      var deliv = rows.filter(function (it) { return !it.done && it.m.shape === "deliverable"; }).length;
+      var mw = !filter && F.meeting_weeks && F.meeting_weeks[w], mn = mw ? mw.internal + mw.client : 0;
+      var wk = "<b>Week of " + esc(fmt(w)) + "</b>" + (w === thisWeek ? "<span>This week</span>" : "") +
+        (deliv >= (D.heavy_week || 3) ? '<span class="heavy">\u26A0 ' + plural(deliv, "deliverable") + "</span>" : "") +
+        (off[w] ? '<span class="away">\u2708 ' + off[w].map(function (t) { return esc(t.note || "Time off"); }).join(", ") + "</span>" : "") +
+        (mn ? "<span>" + plural(mn, "meeting") + "</span>" : "");
+      h += '<div class="fl-week' + (w === thisWeek ? " now" : "") + '"><div class="fl-wk">' + wk + "</div><div>" + rows.map(function (it) {
+        var m = it.m, mark = !it.done && m.id && pend("milestone", m.project, m.id), clash = !it.done && byDay[m.due] && Object.keys(byDay[m.due]).length >= 2;
+        var tint = it.done ? "u-done" : m.window === "overdue" ? "u-now" : m.urgency === "soon" ? "u-later" : "u-" + m.urgency;
+        var tags = (mark ? '<span class="pill pending">Pending</span>' : "") + (m.at_risk ? '<span class="pill risk">\u25B2 At risk</span>' : "") + (!it.done && m.window === "overdue" ? '<span class="pill over">Overdue</span>' : "") +
+          (m.time_off ? '<span class="pill away">\u2708 Time off</span>' : "");
+        return '<div class="fl-item' + (it.done ? " done" : "") + (clash ? " clash" : "") + '"><span class="fl-d">' + esc(fmt(m.due, true)) + '</span><span class="dot s-' + (m.shape || "other") + '"><i class="' + tint + '"></i></span>' +
+          '<span class="fl-proj" title="' + esc(m.project) + '">' + esc(m.project) + '</span><span class="fl-name">' + md(m.name) + '</span><span class="fl-st">' + (it.done ? "done" : esc(m.status || "")) + tags + "</span></div>";
+      }).join("") + "</div></div>";
+    });
+    return h + '</div><div class="sub muted">Every dated milestone of the active projects, read to its last date. Shapes and colours as in the timeline above; grey is done; a shaded row means 2+ projects due that day. Meetings are counted, not listed.</div></details>';
+  }
+  app.addEventListener("toggle", function (e) { if (e.target.classList && e.target.classList.contains("fl")) fullOpen = e.target.open; }, true);
+
+  function render() {
+    var ms = D.milestones.filter(function (m) { return m.urgency !== "parked" && shown(m.project); });
+    var now = ms.filter(function (m) { return m.urgency === "now"; });
+    var soon = ms.filter(function (m) { return m.urgency === "soon"; });
+    var later = ms.filter(function (m) { return m.urgency === "later"; });
+    var parked = D.milestones.filter(function (m) { return m.urgency === "parked"; });
+    var counts = {}; D.milestones.forEach(function (m) { if (m.urgency === "now") counts[m.project] = (counts[m.project] || 0) + 1; });
+    // Meetings join the lists by brief.py's urgency. With a meetings chip off only agenda-due ones stay: those are things to do.
+    var mts = meetings.filter(function (m) { return shown(m.project) && (mtgOn(m) || m.agenda_due); });
+    function plus(level) { return mts.filter(function (m) { return m.urgency === level; }); }
+    var agendas = meetings.filter(function (m) { return m.agenda_due; });
+    agendas.forEach(function (m) { counts[m.project] = (counts[m.project] || 0) + 1; });
+    var agendasShown = agendas.filter(function (m) { return shown(m.project); }).length;
+
+    var h = head + '<div class="sub">' + plural(live.length, "active project") + (parkedProjects.length ? " (" + parkedProjects.length + " paused or closed, folded at the bottom)" : "") +
+      " · looking ahead " + esc(ahead) + ", to " + esc(fmt(D.lookahead, true)) + (D.scope ? " · " + md(D.scope) : "") + "</div>" + banners;
+    if (staleNames.length) h += '<div class="banner warn">▲ Treat as unconfirmed — active but stale or undated: ' + staleNames.map(esc).join(", ") + ".</div>";
+    if (timeOff.length) h += '<div class="banner">✈ Your time off in this window: ' + timeOff.map(function (t) { return esc(range(t)) + (t.note ? " (" + md(t.note) + ")" : ""); }).join("; ") + ".</div>";
+    if (D.notes.length) h += '<div class="banner warn">Settings: ' + D.notes.map(md).join(" ") + "</div>";
+    if ((D.signature_notes || []).length) h += '<div class="banner">Signatures: ' + D.signature_notes.map(md).join(" ") + "</div>";
+
+    h += '<div class="filters" role="group" aria-label="Filter by project"><button type="button" class="chip" data-f="" aria-pressed="' + !filter + '">All active projects</button>' +
+      live.map(function (p) { return '<button type="button" class="chip" data-f="' + esc(p.name) + '" aria-pressed="' + (filter === p.name) + '"' +
+        (counts[p.name] ? ' title="' + plural(counts[p.name], "item") + ' to do now"' : "") + ">" + esc(p.name) +
+        (counts[p.name] ? '<span class="n">' + counts[p.name] + "</span>" : "") + "</button>"; }).join("") +
+      (meetings.length ? '<button type="button" class="chip mtgchip" data-mtg="client" aria-pressed="' + showClient + '" title="Client meetings in the lists and the timeline; agendas to set always show">Client meetings</button>' +
+        '<button type="button" class="chip mtgchip" data-mtg="internal" aria-pressed="' + showInternal + '" title="Internal meetings in the lists and the timeline; agendas to set always show">Internal meetings</button>' : "") + "</div>";
+
+    var startable = live.filter(function (p) { return shown(p.name) && p.startable; })
+      .reduce(function (n, p) { return n + p.startable.length; }, 0);
+    function tally(rows) { var c = {}; rows.forEach(function (m) { c[m.project] = (c[m.project] || 0) + 1; }); return c; }
+    function tileTip(title, c) {
+      var names = Object.keys(c).sort();
+      return ' tabindex="0" data-tip="' + esc("<b>" + title + "</b>" + (names.length ? names.map(function (n) { return esc(n) + " — " + c[n]; }).join("<br>") : "No projects")) + '"';
+    }
+    var nowTally = tally(now); agendas.forEach(function (m) { if (shown(m.project)) nowTally[m.project] = (nowTally[m.project] || 0) + 1; });
+    var startTally = {}; live.forEach(function (p) { if (shown(p.name) && p.startable && p.startable.length) startTally[p.name] = p.startable.length; });
+    h += '<div class="tiles"><div class="tile' + (now.length + agendasShown ? " hot" : "") + '"' + tileTip("Do now", nowTally) + '><div class="v">' + (now.length + agendasShown) + '</div><div class="k">Do now (overdue or due ≤ ' + D.now_days + " days" +
+      (agendasShown ? ", incl. " + plural(agendasShown, "agenda") + " to set" : "") + ")</div></div>" +
+      '<div class="tile"' + tileTip("Watch", tally(soon)) + '><div class="v">' + soon.length + '</div><div class="k">Watch (next ' + period(D.settings.horizon_days) + " or at risk)</div></div>" +
+      '<div class="tile"' + tileTip("Later", tally(later)) + '><div class="v">' + later.length + '</div><div class="k">Later, within ' + esc(ahead) + "</div></div>" +
+      '<div class="tile"' + tileTip("Startable tasks", startTally) + '><div class="v">' + startable + '</div><div class="k">Startable tasks</div></div></div>';
+
+    h += "<section><h2>Timeline \u2014 " + WEEKS + " weeks, " + esc(fmt(iso(tlRange().start), true)) + " to " + esc(fmt(iso(tlRange().last), true)) + "</h2>" +
+      timeline(ms) + "</section>";
+    h += '<section><h2>Do now</h2>' + list(now.concat(plus("now")), "Nothing overdue or due in the next " + D.now_days + " days.", "now") +
+      '<div class="legend"><span><i class="u-now"></i>Overdue</span>' +
+      (mts.length ? '<span class="muted">Thin rows are meetings from each project&#39;s meetings.md: click one to open it. Notes only: update your own calendar to match.</span>' : "") + "</div></section>";
+    h += "<section><h2>Watch</h2>" + list(soon.concat(plus("soon")), "Nothing else due in the next " + period(D.settings.horizon_days) + ", and nothing at risk.") + "</section>";
+    h += "<section><h2>Later</h2>" + list(later.concat(plus("later")), "No other dated milestones in the next " + ahead + ".") + "</section>";
+
+    h += '<section><h2>Projects</h2><div class="cards">' + live.filter(function (p) { return shown(p.name); }).map(card).join("") + "</div></section>";
+    h += fullTimeline();
+    if (parkedProjects.length && !filter) h += '<details class="group"><summary>Paused, reference or closed (' + parkedProjects.length + ")" +
+      (parked.length ? " — " + plural(parked.length, "dated milestone") : "") + '</summary><div class="cards">' + parkedProjects.map(card).join("") + "</div>" +
+      (parked.length ? '<section><h2>Their dated milestones</h2>' + list(parked, "") + "</section>" : "") + "</details>";
+
+    var clash = clashDays(D.milestones.filter(function (m) { return m.urgency !== "parked"; }));
+    h += "<footer><b>Same day, 2+ active projects:</b> " + (clash.length ? clash.map(function (c) { return esc(c.date) + " (" + c.projects.map(esc).join(", ") + ")"; }).join("; ") : "none") +
+      "<br><br>Generated by <code>scripts/brief.py</code> on " + esc(D.today) + " from each project&#39;s own trackers. This page changes nothing in them: changes you mark are collected in the bar at the bottom and applied only when you paste them into the hub&#39;s <code>/fleet</code> update. The page itself is rewritten with every brief. " +
+      "The same facts are in <code>brief-latest.md</code> and <code>brief-latest.json</code>. Time off comes from <code>~/.familiar/time-off.md</code>" +
+      (D.me && D.me.length ? "; your name is matched from <code>hub-settings.md</code> → <code>me</code>." : "; set <code>me</code> in <code>hub-settings.md</code> to highlight your own items.") +
+      "<br>Sources: " + esc(D.sources) + "</footer>";
+    app.innerHTML = h + panel();
+  }
+
+  // ---------- interaction
+  app.addEventListener("click", function (e) {
+    var mb = e.target.closest("[data-mtg]"); if (mb) { if (mb.getAttribute("data-mtg") === "client") showClient = !showClient; else showInternal = !showInternal; render(); return; }
+    var f = e.target.closest("[data-f]");
+    if (f) { filter = f.getAttribute("data-f") || null; render(); return; }
+    var act = e.target.closest("[data-act]");
+    if (act) {
+      var a = act.getAttribute("data-act"), kind = act.getAttribute("data-kind"), project = act.getAttribute("data-project"), id = act.getAttribute("data-id"), on = act.getAttribute("data-on") || "";
+      var name = ""; if (kind === "milestone" && msFind(project, id)) name = msFind(project, id).name; else if (kind === "task" && taskFind(project, id)) name = taskFind(project, id).title;
+      var k = act.getAttribute("data-k") || "", box = act.closest(".editor");
+      function bad(el, msg) { // say why on the field itself, then wait for the next try
+        if (msg) { el.setCustomValidity(msg); el.reportValidity(); el.addEventListener("input", function () { el.setCustomValidity(""); }, { once: true }); }
+        el.focus(); }
+      function newTitle(was, strict) { // a name tracker_edit.py will accept, or null after saying why not
+        var el = box.querySelector(".ed-name"), v = el.value.replace(/\s+/g, " ").trim();
+        var why = !v ? "Give the new name" : v === plain(was).trim() ? "That is the name it has now" : /\|/.test(v) ? "A name cannot contain |" :
+          strict && /\*\*|—/.test(v) ? "A name cannot contain ** or —" : "";
+        if (why) { bad(el, why); return null; }
+        return v; }
+      function reason() { var el = box.querySelector(".ed-why"), v = clean(el.value); if (!v) bad(el, "A reason is required"); return v; }
+      if (a === "done") setPending({ kind: "milestone", project: project, id: id, name: name, change: "status done", reason: "" });
+      else if (a === "tdone") setPending({ kind: "task", project: project, id: id, name: name, change: "done", reason: "" });
+      else if (a === "undo") setPending({ kind: kind, project: project, id: id, on: on });
+      else if (a === "mtopen") { openMt[k] = !openMt[k]; if (!openMt[k] && editing && editing.indexOf(k + "\u0001") === 0) editing = null; }
+      else if (/^(mmove|mdrop|mtitle|magenda|mnone|mremind)$/.test(a)) { editing = k + "\u0001" + a; }
+      else if (a === "deck") { copyText(deckPrompt(mtFind(k))); copied = k; }
+      else if (a === "save-mtitle") {
+        var mname = newTitle(mtFind(k).meeting, false); if (mname === null) return;
+        var mwhy0 = reason(); if (!mwhy0) return;
+        setPending({ kind: "meeting", project: project, id: id, on: "title", change: "title " + mname, reason: mwhy0 }); editing = null;
+      }
+      else if (a === "save-magenda") {
+        var ta = box.querySelector(".ed-items"), items = ta.value.split(/\r?\n/).map(function (t) { return t.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "").replace(/\s+/g, " ").trim(); }).filter(Boolean);
+        if (!items.length) { bad(ta, "Write at least one topic, or use No agenda needed"); return; }
+        if (items.some(function (t) { return /[;|]/.test(t); })) { bad(ta, "A topic cannot contain ; or |"); return; }
+        var st = box.querySelector(".ed-standing"), when = st && st.checked ? "standing" : mtFind(k).date;
+        setPending({ kind: "meeting", project: project, id: id, on: "agenda " + when, change: "agenda " + when + " | items: " + items.join("; "), reason: "" }); editing = null;
+      }
+      else if (a === "save-mnone") {
+        var nwhy = reason(); if (!nwhy) return; var nd = mtFind(k).date;
+        setPending({ kind: "meeting", project: project, id: id, on: "agenda " + nd, change: "agenda " + nd + " | none: " + nwhy, reason: "" }); editing = null;
+      }
+      else if (a === "save-mremind") {
+        var rin = box.querySelector('input[type="date"]'), rd = rin.value, rm = mtFind(k).date;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(rd)) { bad(rin, "Pick a date"); return; }
+        if (rd < D.today || rd > rm) { bad(rin, "Pick a day from " + fmt(D.today, true) + " to the meeting, " + fmt(rm, true)); return; }
+        setPending({ kind: "meeting", project: project, id: id, on: "remind " + rm, change: "remind " + rd + " on " + rm, reason: "" }); editing = null;
+      }
+      else if (a === "tmove" || a === "tedit" || a === "edit") { editing = pkey({ kind: kind, project: project, id: id }) + "\u0001" + a; }
+      else if (a === "save-tmove") {
+        var tin = box.querySelector('input[type="date"]'), td = tin.value;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) { bad(tin, "Pick the new date"); return; }
+        var twhy = reason(); if (!twhy) return;
+        setPending({ kind: "task", project: project, id: id, name: name, change: "due " + td, reason: twhy }); editing = null;
+      }
+      else if (a === "save-tedit" || a === "save-edit") {
+        var tname = newTitle(name, true); if (tname === null) return;
+        var ewhy = reason(); if (!ewhy) return;
+        setPending({ kind: kind, project: project, id: id, name: name, change: "title " + tname, reason: ewhy }); editing = null;
+      }
+      else if (a === "save-mmove") {
+        var mbox = act.closest(".editor"), mdate = mbox.querySelector('input[type="date"]').value, mtime = clean(mbox.querySelector(".ed-time").value), mwhy = mbox.querySelector(".ed-why").value.trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(mdate)) { mbox.querySelector('input[type="date"]').focus(); return; }
+        if (mtime && !/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(mtime)) { mbox.querySelector(".ed-time").focus(); return; }
+        if (!mwhy) { mbox.querySelector(".ed-why").focus(); return; }
+        setPending({ kind: "meeting", project: project, id: id, on: on, change: "move " + (on ? on + " to " : "") + mdate + (mtime ? " " + mtime : ""), reason: mwhy }); editing = null;
+      }
+      else if (a === "save-mdrop") {
+        var cbox = act.closest(".editor"), cwhy = cbox.querySelector(".ed-why").value.trim();
+        if (!cwhy) { cbox.querySelector(".ed-why").focus(); return; }
+        setPending({ kind: "meeting", project: project, id: id, on: on, change: "cancel" + (on ? " " + on : ""), reason: cwhy }); editing = null;
+      }
+      else if (a === "move" || a === "drop") { editing = pkey({ kind: "milestone", project: project, id: id }) + "\u0001" + a; }
+      else if (a === "cancel") { editing = null; }
+      else if (a === "save-move") {
+        var box = act.closest(".editor"), date = box.querySelector('input[type="date"]').value, why = box.querySelector('input[type="text"]').value.trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { box.querySelector('input[type="date"]').focus(); return; }
+        if (!why) { box.querySelector('input[type="text"]').focus(); return; }
+        setPending({ kind: "milestone", project: project, id: id, name: name, change: "due " + date, reason: why }); editing = null;
+      }
+      else if (a === "save-drop") {
+        var dbox = act.closest(".editor"), dwhy = dbox.querySelector('input[type="text"]').value.trim();
+        if (!dwhy) { dbox.querySelector('input[type="text"]').focus(); return; }
+        setPending({ kind: "milestone", project: project, id: id, name: name, change: "status not-applicable", reason: dwhy }); editing = null;
+      }
+      else if (a === "toggle") panelOpen = !panelOpen;
+      else if (a === "remove") { pending.splice(+act.getAttribute("data-i"), 1); save(); }
+      else if (a === "clear") { pending = []; panelOpen = false; save(); }
+      else if (a === "copy") { copyText(pendingText()); panelOpen = true; }
+      render();
+      return;
+    }
+    var more = e.target.closest("[data-more]");
+    if (more) { more.parentNode.querySelectorAll("li.more").forEach(function (li) { li.hidden = false; }); more.remove(); return; }
+    if (e.target.id === "theme") {
+      var root = document.documentElement, dark = root.getAttribute("data-theme") ? root.getAttribute("data-theme") === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+      root.setAttribute("data-theme", dark ? "light" : "dark");
+      try { localStorage.setItem("fleet-brief-theme", root.getAttribute("data-theme")); } catch (err) { /* storage blocked: theme lasts this view only */ }
+    }
+  });
+  var tip = document.getElementById("tip");
+  function tipHtml(el) {
+    if (el.hasAttribute("data-tip")) return el.getAttribute("data-tip"); // built with esc/md above
+    if (el.hasAttribute("data-mt")) {
+      var mt = (D.meetings || [])[+el.getAttribute("data-mt")]; if (!mt) return "";
+      return "<b>" + esc(fmt(mt.date, true)) + " \u00b7 " + esc(rel(mt.days)) + "</b>" + esc(mt.project) + " \u00b7 " + esc(mt.kind) + " meeting<br>" + esc(hoursOf(mt)) + " " + md(mt.meeting) +
+        (mt.attendees && mt.attendees.length ? '<br><span style="opacity:.75">' + esc(mt.attendees.join(", ")) + "</span>" : "") +
+        (mt.source === "moved" ? "<br>Moved from " + esc(fmt(mt.moved_from, true)) : "") + (mt.overlaps && mt.overlaps.length ? "<br><b>Overlaps</b>" + mt.overlaps.map(esc).join("<br>") : "");
+    }
+    if (el.hasAttribute("data-cm")) {
+      var cm = (D.completed || [])[+el.getAttribute("data-cm")]; if (!cm) return "";
+      return "<b>" + esc(fmt(cm.due, true)) + " \u00b7 completed</b>" + esc(cm.project) + (cm.type ? " \u00b7 " + esc(cm.type) : "") + "<br>" + md(cm.name);
+    }
+    if (!el.hasAttribute("data-m")) return ""; // a legend or full-timeline shape: no tooltip
+    var m = D.milestones[+el.getAttribute("data-m")]; if (!m) return "";
+    return "<b>" + esc(fmt(m.due, true)) + " · " + esc(rel(m.days)) + "</b>" + esc(m.project) + (m.type ? " · " + esc(m.type) : "") + "<br>" + md(m.name) +
+      '<br><span style="opacity:.75">' + (m.owner ? "Owner: " + md(m.owner) : "Owner not set") + " · " + (m.status ? md(m.status) : "status not set") + "</span>" +
+      (m.at_risk && m.risk_reason ? "<br><b>At risk: what the timeline says</b>" + md(m.risk_reason) : "");
+  }
+  function showTip(el) {
+    var html = tipHtml(el); if (!html) return;
+    tip.innerHTML = html;
+    var r = el.getBoundingClientRect(); tip.style.display = "block";
+    var left = Math.min(window.innerWidth - tip.offsetWidth - 8, Math.max(8, r.left + r.width / 2 - tip.offsetWidth / 2));
+    var top = r.top - tip.offsetHeight - 8; if (top < 8) top = r.bottom + 8;
+    tip.style.left = left + "px"; tip.style.top = top + "px";
+  }
+  var TIPPED = ".dot, [data-tip]";
+  app.addEventListener("mouseover", function (e) { var d = e.target.closest(TIPPED); if (d) showTip(d); });
+  app.addEventListener("mouseout", function (e) { if (e.target.closest(TIPPED)) tip.style.display = "none"; });
+  app.addEventListener("focusin", function (e) { var d = e.target.closest(TIPPED); if (d) showTip(d); });
+  app.addEventListener("focusout", function () { tip.style.display = "none"; });
+  window.addEventListener("scroll", function () { tip.style.display = "none"; }, { passive: true });
+  try { var saved = localStorage.getItem("fleet-brief-theme"); if (saved) document.documentElement.setAttribute("data-theme", saved); } catch (err) { /* no storage */ }
+
+  render();
+})();
+</script>
+</body>
+</html>

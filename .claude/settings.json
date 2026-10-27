@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python scripts/fleet_overview.py)",
+      "Bash(python scripts/fleet_overview.py --stdout)",
+      "Bash(python scripts/fleet_overview.py --json)",
+      "Bash(python3 scripts/fleet_overview.py)",
+      "Bash(python3 scripts/fleet_overview.py --stdout)",
+      "Bash(python3 scripts/fleet_overview.py --json)",
+      "Bash(python scripts/brief.py)",
+      "Bash(python scripts/brief.py --catch-up)",
+      "Bash(python3 scripts/brief.py)",
+      "Bash(python3 scripts/brief.py --catch-up)",
+      "Bash(python scripts/weekly.py)",
+      "Bash(python scripts/weekly.py --catch-up)",
+      "Bash(python3 scripts/weekly.py)",
+      "Bash(python3 scripts/weekly.py --catch-up)",
+      "Bash(python scripts/apply_change.py preview)",
+      "Bash(python3 scripts/apply_change.py preview)"
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+interface:
+  display_name: "familiar:fleet"
+  short_description: "Cross-project fleet overview"
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,194 @@
+<!doctype html>
+<!-- Week-ahead brief page template. scripts/weekly.py pastes weekly-latest.json into the data slot below and
+     writes the result to _overview/weekly-latest.html. Edit this file, never the generated page.
+     Self-contained on purpose: no network, no fonts, no libraries, so it opens from disk anywhere. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week ahead</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f6f4; --surface: #fcfcfb; --surface-2: #f0efeb; --line: #e2e1dc;
+  --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #7a7974;
+  --critical: #d03b3b; --serious: #ec835a; --critical-ink: #a32626; --serious-ink: #9a4a24;
+  --critical-bg: #fbeaea; --serious-bg: #fdf0e9; --today: #2a78d6;
+  --me-bg: #dcebfb; --me-ink: #114a8b; --away: rgba(42, 120, 214, .16); --away-line: rgba(42, 120, 214, .45);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --surface-2: #232321; --line: #33322f;
+    --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #94938b;
+    --critical-ink: #f08a8a; --serious-ink: #f2a582; --critical-bg: #3a1d1c; --serious-bg: #3a261c; --today: #3987e5;
+    --me-bg: #183a5e; --me-ink: #cfe3fb; --away: rgba(57, 135, 229, .20); --away-line: rgba(57, 135, 229, .55);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1a1a19; --surface-2: #232321; --line: #33322f;
+  --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #94938b;
+  --critical-ink: #f08a8a; --serious-ink: #f2a582; --critical-bg: #3a1d1c; --serious-bg: #3a261c; --today: #3987e5;
+  --me-bg: #183a5e; --me-ink: #cfe3fb; --away: rgba(57, 135, 229, .20); --away-line: rgba(57, 135, 229, .55);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1020px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 22px; margin: 0; letter-spacing: -.01em; }
+h2 { font-size: 15px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); }
+section { margin-top: 28px; }
+.sub { color: var(--ink-2); margin-top: 4px; }
+.muted { color: var(--ink-3); }
+.banner { border-radius: 8px; padding: 10px 14px; margin-top: 16px; border: 1px solid var(--line); background: var(--surface); }
+.banner.bad { border-color: var(--critical); background: var(--critical-bg); color: var(--critical-ink); font-weight: 600; }
+.banner.warn { border-color: var(--serious); background: var(--serious-bg); }
+mark.me { background: var(--me-bg); color: var(--me-ink); font-weight: 650; border-radius: 4px; padding: 0 4px; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.tile .v { font-size: 28px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.tile .k { color: var(--ink-2); font-size: 12.5px; margin-top: 2px; }
+.tile.hot .v { color: var(--critical-ink); }
+@media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.pill { font-size: 11.5px; border-radius: 999px; padding: 2px 8px; white-space: nowrap; border: 1px solid var(--line); color: var(--ink-2); }
+.pill.over, .pill.high { border-color: var(--critical); color: var(--critical-ink); background: var(--critical-bg); font-weight: 600; }
+.pill.risk, .pill.watch { border-color: var(--serious); color: var(--serious-ink); background: var(--serious-bg); font-weight: 600; }
+.pill.away { border-color: var(--away-line); background: var(--away); color: var(--ink); }
+.list { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.caut { display: grid; grid-template-columns: 78px 1fr; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); align-items: start; }
+.caut:first-child { border-top: 0; }
+.caut.high { border-left: 4px solid var(--critical); }
+.caut.watch { border-left: 4px solid var(--serious); }
+.caut .kind { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+.empty { padding: 14px; color: var(--ink-3); }
+.day { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-top: 10px; }
+.day.off { border-color: var(--away-line); background: color-mix(in srgb, var(--away) 60%, var(--surface)); }
+.day h3 { margin: 0 0 6px; font-size: 14.5px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.item { display: grid; grid-template-columns: 78px 1fr; gap: 10px; padding: 4px 0; border-top: 1px solid var(--line); }
+.item:first-of-type { border-top: 0; }
+.item .t { font-variant-numeric: tabular-nums; color: var(--ink-3); font-size: 12.5px; }
+.item .proj { font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.item .meta { font-size: 12.5px; color: var(--ink-3); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
+.card h3 { font-size: 14.5px; margin: 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.card .status { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; }
+.card ul { margin: 6px 0 0; padding-left: 18px; }
+.card li { margin: 3px 0; }
+.card .id { font: 11.5px ui-monospace, Consolas, monospace; color: var(--ink-3); margin-right: 4px; }
+.card .k { font-size: 11.5px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; margin-top: 10px; }
+.card .by { font-size: 12px; color: var(--ink-3); }
+.card .probs { margin-top: 8px; font-size: 12.5px; color: var(--serious-ink); }
+footer { margin-top: 32px; font-size: 12px; color: var(--ink-3); }
+.theme { float: right; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); border-radius: 6px; padding: 2px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+@media print { body { background: #fff; } .theme { display: none; } }
+.wordmark { font: 400 30px/1 Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+  letter-spacing: -.01em; color: var(--ink); margin: 0 0 6px; position: relative; z-index: 0; }
+.wordmark .ili { position: relative; display: inline-block; }
+.wordmark .ili::before { content: ""; position: absolute; inset: -40% -35%; z-index: -1;
+  background: radial-gradient(closest-side, rgba(210, 98, 26, .7), rgba(210, 98, 26, 0)); }
+</style>
+</head>
+<body>
+<main id="app"><p>Loading week…</p></main>
+<script id="weekly-data" type="application/json">__WEEKLY_DATA__</script>
+<script>
+(function () {
+  "use strict";
+  var SCHEMA = 1;
+  var app = document.getElementById("app"), D;
+  try { D = JSON.parse(document.getElementById("weekly-data").textContent); }
+  catch (err) { app.innerHTML = '<div class="banner bad">The weekly brief data could not be read. Open weekly-latest.md instead.</div>'; return; }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function day(iso) { var p = iso.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  var DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function fmt(iso) { var d = day(iso); return DOW[d.getDay()] + " " + MON[d.getMonth()] + " " + d.getDate(); }
+  if (D.ok === false) { app.innerHTML = '<div class="wordmark" aria-label="familiar">fam<span class="ili">ili</span>ar</div><h1>Week ahead</h1><div class="banner bad">FAILED: ' + esc(D.reason) + "</div>"; return; }
+  var ME = (D.me || []).filter(Boolean).map(function (n) { return n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); });
+  var ME_RE = ME.length ? new RegExp("(^|[^\\w])(" + ME.join("|") + ")(?![\\w])", "gi") : null;
+  function who(o) { if (!o) return ""; var h = esc(o); if (ME_RE) h = h.replace(ME_RE, '$1<mark class="me">$2</mark>'); return " — " + h; }
+  function hours(m) { return m.end ? m.start + "–" + m.end : m.start; }
+
+  var banners = "";
+  if (D.schema !== SCHEMA) banners += '<div class="banner warn">This page expects weekly data version ' + SCHEMA + " and got " + esc(D.schema) + ". Some parts may be missing.</div>";
+  (D.notes || []).forEach(function (n) { banners += '<div class="banner warn">' + esc(n) + "</div>"; });
+  if (D.scope) banners += '<div class="banner">' + esc(D.scope) + "</div>";
+
+  var high = D.cautions.filter(function (c) { return c.level === "high"; }), watch = D.cautions.filter(function (c) { return c.level === "watch"; });
+  var items = D.days.reduce(function (n, d) { return n + d.milestones.length; }, 0);
+  var meetings = D.days.reduce(function (n, d) { return n + d.meetings.length; }, 0);
+  var h = '<button class="theme" type="button" id="theme">Theme</button><div class="wordmark" aria-label="familiar">fam<span class="ili">ili</span>ar</div><h1>Week ahead: ' + esc(fmt(D.start)) + " – " + esc(fmt(D.end)) + "</h1>" +
+    '<div class="sub">Generated ' + esc(fmt(D.today)) + ". Everything here comes from the projects’ own trackers; nothing is inferred.</div>" + banners +
+    '<div class="tiles">' +
+    '<div class="tile' + (high.length ? " hot" : "") + '"><div class="v">' + high.length + '</div><div class="k">need attention</div></div>' +
+    '<div class="tile"><div class="v">' + watch.length + '</div><div class="k">to watch</div></div>' +
+    '<div class="tile"><div class="v">' + items + '</div><div class="k">dated items this week</div></div>' +
+    '<div class="tile"><div class="v">' + meetings + '</div><div class="k">meetings</div></div></div>';
+
+  h += "<section><h2>Cautions</h2>";
+  if (!D.cautions.length) h += '<div class="list"><div class="empty">No conflicts or at-risk items found for this window.</div></div>';
+  else h += '<div class="list">' + D.cautions.map(function (c) {
+    return '<div class="caut ' + c.level + '"><div><span class="pill ' + c.level + '">' + (c.level === "high" ? "Attention" : "Watch") + '</span><div class="kind">' + esc(c.kind) + "</div></div><div>" + esc(c.text) + "</div></div>";
+  }).join("") + "</div>";
+  h += "</section>";
+
+  h += "<section><h2>Day by day</h2>" + D.days.map(function (d) {
+    var rows = d.milestones.map(function (m) {
+      return '<div class="item"><div class="t">' + esc(m.type || "milestone") + '</div><div><span class="proj">' + esc(m.project) + "</span><div>" + esc(m.name) +
+        (m.at_risk ? ' <span class="pill risk">at risk</span>' : "") + '</div><div class="meta">' + esc(m.status || "status not set") + who(m.owner) + "</div></div></div>";
+    }).concat(d.meetings.map(function (m) {
+      return '<div class="item"><div class="t">' + esc(hours(m)) + '</div><div><span class="proj">' + esc(m.project) + "</span><div>" + esc(m.meeting) +
+        '</div><div class="meta">' + esc(m.kind) + " meeting" + (m.source === "moved" ? ", moved from " + esc(m.moved_from) : "") + (m.overlaps.length ? "; overlaps " + esc(m.overlaps.join(", ")) : "") + "</div></div></div>";
+    }));
+    return '<div class="day' + (d.time_off ? " off" : "") + '"><h3>' + esc(fmt(d.date)) + (d.time_off ? ' <span class="pill away">you are off: ' + esc(d.time_off) + "</span>" : "") + "</h3>" +
+      (rows.length ? rows.join("") : '<div class="muted">Nothing dated.</div>') + "</div>";
+  }).join("") + "</section>";
+
+  if (D.carried.length) h += "<section><h2>Open from before the week</h2><div class=\"list\">" + D.carried.map(function (m) {
+    return '<div class="caut high"><div><span class="pill over">' + (m.days < 0 ? -m.days + " d late" : "earlier") + '</span></div><div><b>' + esc(m.project) + "</b> — " + esc(m.name) +
+      '<div class="meta muted">due ' + esc(m.due) + " · " + esc(m.status || "status not set") + who(m.owner) + "</div></div></div>";
+  }).join("") + "</div></section>";
+
+  h += "<section><h2>What needs doing, by project</h2><div class=\"sub\">Trackers do not link tasks to milestones, so each project shows its whole open list, yours first.</div>";
+  if (!D.projects.length) h += '<div class="list"><div class="empty">No active project has a date or meeting this week.</div></div>';
+  D.projects.forEach(function (p) {
+    function task(t, blocked) {
+      return "<li>" + (t.id ? '<span class="id">' + esc(t.id) + "</span>" : "") + (t.mine ? '<mark class="me">' + esc(t.title) + "</mark>" : esc(t.title)) +
+        (t.owner ? ' <span class="by">' + esc(t.owner) + "</span>" : "") + (blocked && t.blocked_by && t.blocked_by.length ? '<div class="by">waiting on ' + esc(t.blocked_by.join(", ")) + "</div>" : "") + "</li>";
+    }
+    h += '<div class="card"><h3>' + esc(p.name) + ' <span class="muted">' + esc(p.label) + "</span>" + (p.stale_text ? ' <span class="pill risk">' + esc(p.stale_text) + "</span>" : "") + "</h3>" +
+      (p.status ? '<div class="status">Status: ' + esc(p.status) + "</div>" : "") +
+      "<ul>" + p.milestones.map(function (m) {
+        return "<li><b>" + esc(m.due) + "</b> — " + esc(m.name) + " — " + esc(m.status || "status not set") + who(m.owner) + (m.days < 0 ? ' <span class="pill over">overdue</span>' : "") +
+          (m.at_risk ? ' <span class="pill risk">at risk</span>' : "") + (m.at_risk && m.risk_reason ? '<div class="by">' + esc(m.risk_reason) + "</div>" : "") + "</li>";
+      }).join("") + p.meetings.map(function (m) { return "<li><b>" + esc(m.date) + " " + esc(m.start) + "</b> — meeting: " + esc(m.meeting) + "</li>"; }).join("") + "</ul>";
+    if (!p.tasks_read) h += '<div class="k">Tasks</div><div class="muted">Not read.</div>';
+    else {
+      h += '<div class="k">Startable (' + p.startable_total + ")</div><ul>" + (p.startable.map(function (t) { return task(t, false); }).join("") || '<li class="muted">None.</li>') +
+        (p.startable_total > p.startable.length ? '<li class="muted">…and ' + (p.startable_total - p.startable.length) + " more</li>" : "") + "</ul>";
+      if (p.blocked_total) h += '<div class="k">Blocked (' + p.blocked_total + ")</div><ul>" + p.blocked.map(function (t) { return task(t, true); }).join("") +
+        (p.blocked_total > p.blocked.length ? '<li class="muted">…and ' + (p.blocked_total - p.blocked.length) + " more</li>" : "") + "</ul>";
+    }
+    if (p.problems.length) h += '<div class="probs">Data problems: ' + esc(p.problems.join("; ")) + "</div>";
+    h += "</div>";
+  });
+  h += "</section>";
+
+  h += "<section><h2>Just after the week, to " + esc(fmt(D.after_end)) + "</h2>";
+  h += D.after.length ? '<div class="list">' + D.after.map(function (m) {
+    return '<div class="caut"><div class="kind">' + esc(fmt(m.due)) + "</div><div><b>" + esc(m.project) + "</b> — " + esc(m.name) + (m.at_risk ? ' <span class="pill risk">at risk</span>' : "") +
+      '<div class="muted">' + esc(m.status || "status not set") + who(m.owner) + "</div></div></div>";
+  }).join("") + "</div>" : '<div class="list"><div class="empty">Nothing dated.</div></div>';
+  h += "</section>";
+
+  h += "<footer>" + (D.parked ? D.parked + " dated item(s) in paused, reference or closed projects are not listed. " : "") + "Sources: " + esc(D.sources || "none") + "</footer>";
+  app.innerHTML = h;
+  document.getElementById("theme").addEventListener("click", function () {
+    var root = document.documentElement, dark = root.getAttribute("data-theme") === "dark" ||
+      (!root.getAttribute("data-theme") && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    root.setAttribute("data-theme", dark ? "light" : "dark");
+  });
+})();
+</script>
+</body>
+</html>
