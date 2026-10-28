@@ -96,6 +96,10 @@ lines; a script makes each change; nothing is written before the user has seen t
 
 One offer at a time; wait for the answer before the next. Make no change the user has not agreed to.
 
+0. If `~/.familiar/fleet.md` is missing, or lists no project this hub covers, ask which folder holds the
+   user's familiar projects. Run `python scripts/fleet_overview.py --discover "<folder>"` (it only lists),
+   show what it found, and run it again with `--apply` only on the user's yes. Offer the same for another
+   folder until the user has none left. If nothing is found, say a project must be set up first and stop.
 1. Run `python scripts/fleet_overview.py`, then say in two lines what this hub covers: its categories
    and how many projects were read.
 2. Offer the daily brief. On yes, set `enabled: yes` in `brief-settings.md`.

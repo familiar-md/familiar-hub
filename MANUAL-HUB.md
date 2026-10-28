@@ -179,6 +179,4 @@ exist. Ask for the preview again.
   listed as undated.
 - One writer at a time: an update checks that a file has not changed since the preview, but it does
   not merge two edits made at once.
-- Scheduling is tested on Windows only. macOS and Linux entries are written from their documentation
-  and not yet run.
-- Claude Code is the host the hub has been run on. Codex and Gemini CLI have not been tried.
+- Tested with Claude Code on Windows 11.

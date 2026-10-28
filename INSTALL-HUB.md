@@ -3,25 +3,44 @@
 For using it once installed (what to ask, the brief page, changing projects from the hub), see
 `MANUAL-HUB.md`.
 
-The hub is a folder you open on its own, next to your projects, never inside one.
+The hub is a folder you open on its own, next to your projects, never inside one. Set up at least one
+familiar project before you install it.
 
-1. Copy this folder to a place outside every project, for example `Documents/Claude Code/_hub/`. Leave
-   out `_overview/` if present; the briefs in it are regenerated, and it also holds `change-log.md` and `agenda-snoozes.md`, which are not.
-2. From the hub folder, run `python scripts/fleet_overview.py --discover <your projects folder> --apply`.
-   It creates `~/.familiar/fleet.md`, the list of your projects, if it does not exist yet, and adds
-   every familiar project it finds there (run it once per folder). Only the hub creates this file;
-   afterwards each project can add, remove or update its own row with `/system-settings` → Fleet.
-   Without `--apply` it only lists what it found. On macOS and Linux
-   the command is usually `python3`; use it wherever this file says `python`.
-3. To keep work and personal apart, make two copies, for example `Claude Code/work/_hub/` and
-   `Claude Code/personal/_hub/`, and set `categories: work` in one copy's `hub-settings.md` and
-   `categories: personal` in the other's. Each must match the `category` column in `fleet.md`. A
-   single hub with `categories: all` (the default) shows everything together.
-4. Open your coding host in the hub folder and run `/fleet`. On Claude Code, accept the workspace-trust
-   prompt first; the shipped `.claude/settings.json` pre-approves only the three read-only forms of
-   the overview script, as `python` and as `python3`, and Claude Code applies it after that trust prompt.
-   It also pre-approves `apply_change.py preview` (changes nothing in a project) and never `apply`: every
-   `/fleet` → update batch is shown to you and needs your yes before it is applied.
+## Installing
+
+1. Download `familiar-hub-<version>.zip` from the
+   [Releases page](https://github.com/familiar-md/familiar-hub/releases) and unzip it. Put the
+   `familiar-hub` folder somewhere outside every project, for example `Documents/Claude Code/_hub/`.
+2. Open your AI assistant in the hub folder and run `/fleet` (`/ili-fleet` on Claude Code). On Claude
+   Code, accept the workspace-trust prompt first. The first session walks you through setup: it asks
+   which folder holds your projects, finds the familiar projects in it and lists them in
+   `~/.familiar/fleet.md`, then offers the daily brief.
+
+   To find the projects yourself instead, run this from the hub folder (`python3` on macOS and Linux):
+
+   ```text
+   python scripts/fleet_overview.py --discover <your projects folder> --apply
+   ```
+
+   Without `--apply` it only lists what it found. Run it once per folder that holds projects. Only the
+   hub creates `~/.familiar/fleet.md`; afterwards each project can add, remove or update its own row
+   with `/system-settings` → Fleet.
+3. Optional: to keep work and personal apart, make two hub folders, for example
+   `Claude Code/work/_hub/` and `Claude Code/personal/_hub/`. Set `categories: work` in one folder's
+   `hub-settings.md` and `categories: personal` in the other's. Both read the same
+   `~/.familiar/fleet.md`, and each row's `category` decides which hub it belongs to. A single hub with
+   `categories: all` (the default) shows everything together.
+
+The shipped `.claude/settings.json` lets the overview script run without a prompt, and lets
+`apply_change.py preview` run (it changes nothing). It never pre-approves `apply`: every change to a
+project is shown to you and needs your yes.
+
+## Updating
+
+Download the new zip and copy everything in it over your hub folder, except your two settings files
+(`hub-settings.md`, `brief-settings.md`) and the `_overview/` folder. `_overview/` holds your briefs, the
+change log and your agenda snoozes; the settings files hold your choices. Your project list lives in
+`~/.familiar/fleet.md`, outside the hub, so an update never touches it.
 
 ## What the hub reads, and how to keep a project out
 
@@ -62,11 +81,11 @@ per category (step 3 above) keeps work and personal projects apart in the same w
    only and runs the Python you ran `enable` with, by full path; re-run `enable` if you move the hub
    or reinstall Python (`status` says when the interpreter is missing).
    - Windows: a Task Scheduler task, `familiar-daily-brief`, that runs while you are signed in and
-     catches up a run missed while the PC was off or asleep. Tested on Windows 11.
+     catches up a run missed while the PC was off or asleep.
    - macOS: a launchd agent in `~/Library/LaunchAgents/`. A run missed while asleep happens on wake;
-     one missed while off does not. Not yet run on a Mac.
+     one missed while off does not.
    - Linux: a systemd user timer that makes up a missed run, or a crontab line where systemd's user
-     manager is not available (cron does not make up missed runs). Not yet run on Linux.
+     manager is not available (cron does not make up missed runs).
    - If your organization blocks scheduled tasks, use `--print` to see the entry and ask IT, or rely on
      the open-the-hub catch-up.
 
@@ -92,19 +111,10 @@ Saturday or Sunday, otherwise today through the next 7 days.
    scheduler where it supports that (Windows: yes), or by the catch-up when you next open the hub (writes one if
    none was written in the last 6 days, so the window then starts that day).
 
-## What is confirmed and what is not
+## Fewer permission prompts on Claude Code
 
-Checked against the Claude Code permissions documentation (2026-10-09):
-
-- Reading files in a directory added with `permissions.additionalDirectories`, `--add-dir` or
-  `/add-dir` needs no prompt; editing follows the permission mode.
-- `additionalDirectories` in a project's `.claude/settings.json` waits for the workspace-trust prompt.
-- That setting grants file access only. It does not load skills or `CLAUDE.md` from those folders, which
-  is fine here because the hub reads projects as data.
-- The script path needs none of this: running `python scripts/fleet_overview.py` is a shell command, and
-  the script reads project folders itself. Only the manual fallback uses the file tools on a project, so
-  only it prompts per folder unless you add the directories.
-
+The overview script reads your projects itself, so it needs no folder permissions. Only the manual
+fallback, used when the script cannot run, opens project files with the assistant's file tools.
 To avoid prompts on the manual path, add your projects folder to `.claude/settings.local.json`. On
 Windows, forward slashes work in the path (backslashes would need doubling as `\`):
 
@@ -118,17 +128,4 @@ On macOS or Linux:
 { "permissions": { "additionalDirectories": ["/Users/you/Documents/Claude Code"] } }
 ```
 
-The hub ships no such entry because the path is yours. The docs do not say whether `~` is expanded in
-that key, so use an absolute path. Their one example is a relative path (`"../docs/"`); how it resolves
-is not documented, so prefer absolute.
-
-Not confirmed:
-
-- Codex and Gemini behaviour for any of the above.
-- Reads and writes under `~/.familiar/` from a project. Codex's default sandbox may block writes
-  outside the workspace, and Gemini CLI's file tools may be limited to workspace directories; neither
-  was tried. When a host cannot write there, the `/system-settings` → Fleet branch stops and gives you
-  the registry row to paste into `~/.familiar/fleet.md` yourself. Nothing covers a blocked read of
-  `~/.familiar/` preferences.
-- The hub in a live session on Codex or Gemini CLI. Claude Code has had one headless run (see
-  `_about.md`).
+The hub ships no such entry because the path is yours. Use an absolute path.
