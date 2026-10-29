@@ -81,7 +81,7 @@ INDEX_PATH_LIMIT = 200
 INDEX_BYTES_LIMIT = 20 * 1024
 SCRATCH_BYTES_LIMIT = 50 * 1024 * 1024
 SCRATCH_AGE_DAYS = 14
-TOP_LEVEL_OK = re.compile(r"^(\d-.*|_del|_backups|\.(agents|claude|codex|gemini|familiar|scratch|git|github|vscode|idea|obsidian))$")
+TOP_LEVEL_OK = re.compile(r"^(\d-.*|_del|_backups|_update|\.(agents|claude|codex|gemini|familiar|scratch|git|github|vscode|idea|obsidian))$")
 TOP_LEVEL_TMP = re.compile(r"(tmp|temp|scratch|cache)", re.IGNORECASE)
 
 
@@ -475,6 +475,36 @@ def check_pages(root: Path, r: Report):
               + (" …" if len(unstamped) > 8 else ""))
 
 
+def check_review_dates(root: Path, today: date, r: Report):
+    """Knowledge pages past their `review_by` date (ingest.md → Source dates and conflicts). A page
+    already superseded, or with no ISO date ("not scheduled"), is skipped. Reports only; it never
+    re-dates or rewrites a page."""
+    folder = root / "3-Knowledge"
+    if not folder.is_dir():
+        return
+    try:
+        sys.dont_write_bytecode = True
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import index_check
+    except ImportError:
+        return
+    overdue = []
+    for page in sorted(folder.glob("*.md")):
+        if page.name.startswith("_"):
+            continue
+        fm = index_check.front_matter(read(page))
+        if index_check.page_names(fm.get("superseded_by", "")):
+            continue
+        dates = iso_dates(fm.get("review_by", ""))
+        if dates and dates[0] < today:
+            overdue.append(f"{page.name} (review by {dates[0]})")
+    if overdue:
+        level, prefix = ("attention", "") if r.lifecycle == "active" else ("info", f"(project is {r.lifecycle}) ")
+        r.add("knowledge", level, f"{prefix}{len(overdue)} knowledge page(s) past their review-by date; check "
+              "each against its source before relying on it: " + "; ".join(overdue[:8])
+              + (" …" if len(overdue) > 8 else ""))
+
+
 def check_register(root: Path, r: Report):
     """Plan E2. The register is written by the ingest skill's source_register.py; this only reads it."""
     text = read(root / "3-Knowledge" / "_source-register.md")
@@ -699,7 +729,7 @@ def main():
     for check in (check_setup, check_knowledge, check_pages, check_inputs, check_register, check_hygiene):
         check(root, report)
     for check in (check_snapshot, check_tasks, check_timeline, check_views, check_meetings, check_drafts,
-                  check_handoffs):
+                  check_handoffs, check_review_dates):
         check(root, today, report)
 
     if args.json:
