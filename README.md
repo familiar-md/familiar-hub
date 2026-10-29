@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/familiar-hub-banner.svg" alt="familiar: hub extension" width="720">
+</p>
+
 # familiar-hub
 
 One view across all your [familiar](https://github.com/familiar-md/familiar) projects. The hub is a
