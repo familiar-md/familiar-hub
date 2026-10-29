@@ -505,6 +505,67 @@ def check_review_dates(root: Path, today: date, r: Report):
               + (" …" if len(overdue) > 8 else ""))
 
 
+def register_rows(text: str) -> list[dict]:
+    """Rows of `3-Knowledge/_source-register.md` as dicts keyed by its header."""
+    header, rows = None, []
+    for line in text.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", line.strip())[1:-1]]
+        if header is None:
+            header = cells
+            continue
+        if set("".join(cells)) <= set("-: "):
+            continue
+        rows.append(dict(zip(header, cells)))
+    return rows
+
+
+def check_extracts(root: Path, r: Report):
+    """Each page reaches its full-text cache as `_extract-<source_id>.md` (lookup Routing step 3), with
+    the register's `Source ID` for the page standing in when the page has no `source_id`. Reports a page
+    from a PDF whose ID names no extract, and an extract no page or register row names. Both are info:
+    lookup falls back to an extract named after the page or source file, so nothing is unreachable."""
+    folder = root / "3-Knowledge"
+    if not folder.is_dir():
+        return
+    try:
+        sys.dont_write_bytecode = True
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import index_check
+    except ImportError:
+        return
+    extracts = {p.stem[len("_extract-"):] for p in folder.glob("_extract-*.md")}
+    rows = register_rows(read(folder / "_source-register.md"))
+    by_page, pdf_ids = {}, set()
+    for row in rows:
+        if row.get("Path", "").lower().endswith(".pdf"):
+            pdf_ids.add(row.get("Source ID", ""))
+        for page in (p.strip() for p in row.get("Knowledge page", "").split(";")):
+            if page:
+                by_page.setdefault(Path(page).name, row.get("Source ID", ""))
+    named, missing = {row.get("Source ID", "") for row in rows}, []
+    for page in sorted(folder.glob("*.md")):
+        if page.name.startswith("_"):
+            continue
+        fm = index_check.front_matter(read(page))
+        sid = fm.get("source_id", "").strip("\"'` ") or by_page.get(page.name, "")
+        if not sid:
+            continue
+        named.add(sid)
+        if sid not in extracts and (sid in pdf_ids or fm.get("source", "").lower().endswith(".pdf")):
+            missing.append(f"{page.name} ({sid})")
+    orphans = sorted(extracts - named)
+    if missing:
+        r.add("knowledge", "info", f"{len(missing)} page(s) from a PDF with no `_extract-<source_id>.md` "
+              "under that ID, so lookup has to guess the full text's file: " + "; ".join(missing[:8])
+              + (" …" if len(missing) > 8 else ""))
+    if orphans:
+        r.add("knowledge", "info", f"{len(orphans)} extract(s) no page `source_id` or register row names, so "
+              "lookup reaches them only by guessing: " + ", ".join(f"`_extract-{o}.md`" for o in orphans[:8])
+              + (" …" if len(orphans) > 8 else ""))
+
+
 def check_register(root: Path, r: Report):
     """Plan E2. The register is written by the ingest skill's source_register.py; this only reads it."""
     text = read(root / "3-Knowledge" / "_source-register.md")
@@ -516,17 +577,8 @@ def check_register(root: Path, r: Report):
             r.add("inputs", "info", f"No `3-Knowledge/_source-register.md` yet, so nothing records what "
                   f"happened to the {len(inputs)} input file(s). The next ingest starts it.")
         return
-    header, recorded, open_runs, dead_pages = None, set(), [], []
-    for line in text.splitlines():
-        if not line.startswith("|"):
-            continue
-        cells = [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", line.strip())[1:-1]]
-        if header is None:
-            header = cells
-            continue
-        if set("".join(cells)) <= set("-: "):
-            continue
-        row = dict(zip(header, cells))
+    recorded, open_runs, dead_pages = set(), [], []
+    for row in register_rows(text):
         recorded.add(row.get("Path", ""))
         recorded.update(a.strip() for a in row.get("Aliases", "").split(";") if a.strip())
         if row.get("Status") in ("partial", "failed"):
@@ -726,7 +778,8 @@ def main():
     today = date.fromisoformat(args.today) if args.today else date.today()
 
     report = Report(snapshot_lifecycle(root))
-    for check in (check_setup, check_knowledge, check_pages, check_inputs, check_register, check_hygiene):
+    for check in (check_setup, check_knowledge, check_pages, check_extracts, check_inputs, check_register,
+                  check_hygiene):
         check(root, report)
     for check in (check_snapshot, check_tasks, check_timeline, check_views, check_meetings, check_drafts,
                   check_handoffs, check_review_dates):
