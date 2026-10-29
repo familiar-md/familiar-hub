@@ -23,8 +23,8 @@ familiar project before you install it.
    ```
 
    Without `--apply` it only lists what it found. Run it once per folder that holds projects. Only the
-   hub creates `~/.familiar/fleet.md`; afterwards each project can add, remove or update its own row
-   with `/system-settings` → Fleet.
+   hub creates `~/.familiar/fleet.md` and changes it: later, ask `/fleet` to add, exclude or
+   recategorise a project.
 3. Optional: to keep work and personal apart, make two hub folders, for example
    `Claude Code/work/_hub/` and `Claude Code/personal/_hub/`. Set `categories: work` in one folder's
    `hub-settings.md` and `categories: personal` in the other's. Both read the same
@@ -52,8 +52,8 @@ project's health check, but reports problems in its inputs, drafts and knowledge
 `3-Knowledge/`, and writes to a project only through `/fleet` → update, after you say yes.
 
 Whatever the hub reads goes to the AI assistant you run it in, like anything else that assistant
-reads. To keep a project out of the hub entirely, set its `included` cell to `no` in
-`~/.familiar/fleet.md`, or run `/system-settings` → Fleet inside that project to unregister it. An
+reads. To keep a project out of the hub entirely, ask `/fleet` to exclude it, or set its
+`included` cell to `no` in `~/.familiar/fleet.md`. An
 excluded project appears in no new brief, no `_overview/` page and no `/fleet` answer. Today's brief,
 if written before you excluded it, is rebuilt without it the next time the hub opens or `/fleet` shows
 the brief. Dated briefs from earlier days (`_overview/brief-<date>.md`, `weekly-<date>.md`) keep what

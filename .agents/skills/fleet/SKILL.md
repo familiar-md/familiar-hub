@@ -26,6 +26,7 @@ question; with none stated, run **overview**.
 
 - **overview** — what is active, what is overdue, what is next. Answer from `digest.md`. Put projects with the most overdue or nearest dates first, whatever their lifecycle, and say which are STALE.
 - **lifecycle** — set or change a project's lifecycle (`active`, `paused`, `reference`, `closed`) when the user asks, with `python scripts/fleet_overview.py --set-lifecycle "<name>" <value>`. It edits only the registry row, after a dated backup.
+- **registry** — add, include, exclude or recategorise a project when the user asks. Add: `python scripts/fleet_overview.py --discover "<folder>"` lists unregistered projects (it writes nothing); show them, and run it again with `--apply` only on a yes. Exclude or include again: `--set-included "<name>" no|yes`, which keeps the row (deleting it is the user's hand edit). Category: `--set-category "<name>" work|personal|unset`. State the change and get a yes before each write; each edits only that registry row, after a dated backup, and nothing in the project.
 - **tasks** — what can be started, across projects. Answer from `frontier.md`.
 - **timelines** — what lands in the next two weeks, and which projects collide or crowd a week. Answer from `next-two-weeks.md`; the collision check is yours: group dated items by week and name weeks where two or more projects both have deliverables.
 - **health** — stale snapshots, unreadable projects, projects running a bundled script. Answer from `health.md`.
@@ -225,6 +226,6 @@ and why, then:
 - Missing data is reported as missing. Never estimate a date or a status.
 - Projects with lifecycle `paused`, `reference` or `closed` are shown but their overdue items are
   informational, not alarms.
-- Outside **update**, do not suggest edits to a project from here. Lifecycle is the hub's, so change it here. If the fix is
-  a project change (register or unregister), tell the user to run `/system-settings` inside that project.
+- Outside **update**, do not suggest edits to a project from here. Lifecycle and registration are the hub's, so change them here
+  (**lifecycle**, **registry**).
 - Report the registry's unreadable and excluded rows once, at the end, not per branch.

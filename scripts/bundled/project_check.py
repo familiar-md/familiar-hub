@@ -5,7 +5,7 @@
     python .familiar/scripts/project_check.py --json     # machine-readable
     python .familiar/scripts/project_check.py --today 2026-09-26
 
-Called by `checkin` (check-in.md → 4. Health check). It reads and reports; it never writes, moves,
+Called by `/project-status` → Check-in (check-in.md → 4. Health check). It reads and reports; it never writes, moves,
 or fixes anything, and it prints only exceptions — a clean project prints one line. The model
 interprets the findings and asks before changing anything. If this script cannot run on a
 machine, check-in says so and does the same checks by reading the files, so a blocked script

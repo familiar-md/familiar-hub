@@ -5,6 +5,10 @@ separate folder, kept next to your projects, that reads every one of them and an
 overdue, what lands in the next two weeks and what you can start today. It can also write you a daily
 and a weekly brief.
 
+<p align="center">
+  <img src="docs/assets/fleet-brief-example.png" alt="The hub's daily brief across several fictional projects" width="720">
+</p>
+
 It reads each project through that project's own scripts: the status snapshot, tasks, timeline and
 meetings. It never reads `1-Inputs/`, `2-Drafts/` or `3-Knowledge/`, and it writes into a project only
 when you approve a change it has shown you. Whatever it reads goes to the AI assistant you run it in.

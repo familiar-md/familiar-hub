@@ -7,7 +7,7 @@
 The frontier is every open task whose blockers are all cleared (`state-schema.md` → Tracker
 conventions): a blocker is cleared when it is `none` / `nothing` / `—`, or names a task — by its ID
 or its title — that is done. A blocker written in plain words ("client input", "PDUFA outcome") is
-external and still blocks. `triage`, `ongoing-work`, and check-in used to work this out in the
+external and still blocks. Triage, Where are we, and check-in used to work this out in the
 model's head; this does the graph part and leaves effort, urgency, and priority to the model.
 
 Reads `tasks.md` only and writes nothing. Standard library only. Output groups the frontier by the

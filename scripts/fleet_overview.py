@@ -7,6 +7,8 @@
     python scripts/fleet_overview.py --discover <dir>     # list unregistered projects under <dir>
     python scripts/fleet_overview.py --discover <dir> --apply   # ...and append them, creating the registry if needed
     python scripts/fleet_overview.py --set-lifecycle NAME paused   # active | paused | reference | closed
+    python scripts/fleet_overview.py --set-included NAME no        # stop reading a project; its row stays
+    python scripts/fleet_overview.py --set-category NAME work      # work | personal | unset
 
 The registry is a Markdown table (`name | path | category | included | added | lifecycle`) in
 `~/.familiar/fleet.md`. For each included project this runs the project's OWN
@@ -23,7 +25,8 @@ scoped hub reads only registry rows of those categories, so one hub per category
 personal apart.
 
 The only files written are `_overview/*.md` inside the hub, and the registry (`--discover --apply`
-creates it if missing and appends rows; `--set-lifecycle` edits one row, after a dated backup). This is the only place the registry
+creates it if missing and appends rows; `--set-lifecycle`, `--set-included` and `--set-category` each edit one cell of one row, after a dated
+backup). This is the only place the registry
 is created. Nothing is ever written into a project. Standard library only.
 """
 
@@ -55,15 +58,14 @@ LIFECYCLES = ["active", "paused", "reference", "closed"]
 ORDER = LIFECYCLES
 STALE = re.compile(r"^\s*[-*]?\s*`?stale_days`?\s*:\s*`?(\d+)`?\s*$", re.MULTILINE)
 DEFAULT_STALE_DAYS = 30
-# The fleet hub is the only thing that creates the registry; a project's `/system-settings` → Fleet
-# branch edits its own row in it but never creates the file.
+# The fleet hub is the only thing that creates or edits the registry; a project never writes it.
 REGISTRY_HEADER = """# familiar fleet registry
 
 The familiar projects on this machine, read by the fleet hub. One row per project; `included` = `no`
 keeps a row as a record without scanning it. `category` is matched by each hub's `hub-settings.md`.
-Created by the hub's `scripts/fleet_overview.py --discover <dir> --apply` on {today}. A project adds,
-removes its own row with `/system-settings` → Fleet. `lifecycle` (active, paused, reference or closed;
-blank means active) is owned by the hub: change it with `fleet_overview.py --set-lifecycle`, or by hand.
+Created by the hub's `scripts/fleet_overview.py --discover <dir> --apply` on {today}. The hub owns
+every cell: add projects with `--discover --apply`, and change a row with `--set-included`,
+`--set-category` or `--set-lifecycle` (active, paused, reference or closed; blank means active), or by hand.
 
 | name | path | category | included | added | lifecycle |
 |---|---|---|---|---|---|
@@ -123,13 +125,21 @@ def read_stale_days(path: Path = None) -> int:
     return int(m.group(1)) if m and int(m.group(1)) > 0 else DEFAULT_STALE_DAYS
 
 
+CELL_VALUES = {"lifecycle": LIFECYCLES, "included": ["yes", "no"], "category": ["work", "personal", "unset"]}
+
+
 def set_lifecycle(registry: Path, name: str, value: str, scope: set[str] | None, today: str) -> str:
-    """Set one row's lifecycle in the registry, adding the column if the table has none. Refuses a name
-    outside this hub's scope, an unknown or ambiguous name, and an unrecognised value. Keeps a dated
-    backup of the registry. Every line that is not a table row is left as it was."""
+    return set_cell(registry, name, "lifecycle", value, scope, today)
+
+
+def set_cell(registry: Path, name: str, column: str, value: str, scope: set[str] | None, today: str) -> str:
+    """Set one row's lifecycle, included or category cell in the registry, adding the lifecycle column
+    if the table has none. Refuses a name outside this hub's scope, an unknown or ambiguous name, and an
+    unrecognised value. Keeps a dated backup of the registry. Every line that is not a table row is left
+    as it was."""
     value = value.strip().lower()
-    if value not in LIFECYCLES:
-        raise SystemExit(f"ERROR: lifecycle must be one of {', '.join(LIFECYCLES)}, not {value!r}.")
+    if value not in CELL_VALUES[column]:
+        raise SystemExit(f"ERROR: {column} must be one of {', '.join(CELL_VALUES[column])}, not {value!r}.")
     lines = registry.read_text(encoding="utf-8").splitlines()
     split = lambda l: [c.strip() for c in l.strip().strip("|").split("|")]
     head = next((i for i, l in enumerate(lines) if l.strip().startswith("|")
@@ -159,14 +169,16 @@ def set_lifecycle(registry: Path, name: str, value: str, scope: set[str] | None,
         lines[head + 1] = lines[head + 1].rstrip() + "---|"
         for i, c in rows:
             lines[i] = "| " + " | ".join(c + [""]) + " |"
-    li = header.index("lifecycle")
+    if column not in header:
+        raise SystemExit(f"ERROR: the registry table has no {column!r} column.")
+    li = header.index(column)
     cells = split(lines[target])
     cells += [""] * (len(header) - len(cells))
-    old = cells[li] or "active"
+    old = cells[li] or {"lifecycle": "active", "included": "yes"}.get(column, "unset")
     cells[li] = value
     lines[target] = "| " + " | ".join(cells) + " |"
     registry.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
-    return f"{name}: lifecycle {old} -> {value} (backup {backup.name})"
+    return f"{name}: {column} {old} -> {value} (backup {backup.name})"
 
 
 def scope_note(scope: set[str] | None, uncategorized: list[str]) -> str:
@@ -219,7 +231,7 @@ def private_counts(findings: list[dict]) -> list[dict]:
             counts[f["area"]] = counts.get(f["area"], 0) + 1
     for area, n in sorted(counts.items()):
         kept.append({"area": area, "level": "attention",
-                     "message": f"{n} {area} issue(s); run checkin in that project for details."})
+                     "message": f"{n} {area} issue(s); run /project-status check-in in that project for details."})
     return kept
 
 
@@ -513,6 +525,10 @@ def main():
     ap.add_argument("--apply", action="store_true", help="with --discover: append found projects to the registry")
     ap.add_argument("--set-lifecycle", nargs=2, metavar=("NAME", "VALUE"),
                     help="set a registry row's lifecycle: " + " | ".join(LIFECYCLES))
+    ap.add_argument("--set-included", nargs=2, metavar=("NAME", "VALUE"),
+                    help="include or exclude a registry row: yes | no (the row is kept either way)")
+    ap.add_argument("--set-category", nargs=2, metavar=("NAME", "VALUE"),
+                    help="set a registry row's category: " + " | ".join(CELL_VALUES["category"]))
     args = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
@@ -522,11 +538,13 @@ def main():
     if not registry.is_file() and not args.discover:
         raise SystemExit(f"ERROR: registry {registry} not found. Create it from the hub with "
                          "`python scripts/fleet_overview.py --discover <folder holding your projects> --apply`.")
-    if args.set_lifecycle:
-        if not registry.is_file():
-            raise SystemExit(f"ERROR: registry {registry} not found.")
-        print(set_lifecycle(registry, *args.set_lifecycle, scope, today))
-        return
+    for column, pair in (("lifecycle", args.set_lifecycle), ("included", args.set_included),
+                         ("category", args.set_category)):
+        if pair:
+            if not registry.is_file():
+                raise SystemExit(f"ERROR: registry {registry} not found.")
+            print(set_cell(registry, pair[0], column, pair[1], scope, today))
+            return
     entries = read_registry(registry) if registry.is_file() else []
 
     if args.discover:

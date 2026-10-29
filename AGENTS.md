@@ -14,7 +14,9 @@ This folder is the fleet hub, not a familiar project. It has no trackers of its 
   `pending-preview.json` and `applied-*.json`.
 - **The registry.** `python scripts/fleet_overview.py --discover <dir> --apply` creates
   `~/.familiar/fleet.md` if it is missing and appends the projects it finds; run it only when the user
-  asks, or agrees to it in `/fleet` → Setup. Nothing else creates that file.
+  asks, or agrees to it in `/fleet` → Setup. Nothing else creates that file. `--set-included`,
+  `--set-category` and `--set-lifecycle` each change one row, after a dated backup and the user's yes;
+  no project writes the registry.
 - **First declared exception: the brief's scheduler entry.** `scripts/schedule.py enable` and `disable`
   create or remove one operating-system scheduler entry (daily, or with `--brief weekly` the weekly brief) for the current user, outside this folder.
   Show the `--print` output and get the user's explicit yes every time before passing `--yes`. It

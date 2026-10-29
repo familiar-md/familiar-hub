@@ -18,7 +18,9 @@ The list of projects is `~/.familiar/fleet.md`, one row per project:
 ```
 
 The hub creates that file the first time you run `--discover --apply` (`INSTALL-HUB.md`, step 2). After
-that, each project adds or removes its own row with `/system-settings` → Fleet.
+that, the hub keeps it: ask `/fleet` to add a project (it runs `--discover` and asks before `--apply`),
+exclude one, or change its category or lifecycle. Each change edits one registry row, after a dated
+backup.
 
 ## Asking it things
 
@@ -40,6 +42,7 @@ After that, ask in plain words. The hub picks the matching branch:
 | "Move the client review on Atlas to 3 November" | update | the project's own trackers, after your yes |
 | "I'm off 22 to 26 December" | time off | `~/.familiar/time-off.md`, after your yes |
 | "Atlas is on hold" | lifecycle | the registry's `lifecycle` cell |
+| "Add the projects in my Clients folder", "Leave Atlas out" | registry | the registry's rows, after your yes |
 
 Every answer comes from files the scripts wrote, each stamped with its date and the revision of
 every project file it was built from. If the stamp is not today, the hub reruns the script before
@@ -134,8 +137,8 @@ snapshot, tasks, timeline and meetings, through the project's own scripts. Its h
 problems with inputs, drafts and knowledge only as counts, never by file name. It never reads
 `1-Inputs/`, `2-Drafts/` or `3-Knowledge/`. Whatever it reads goes to the AI assistant you run it in.
 
-To keep a project out, set its `included` cell to `no`, or run `/system-settings` → Fleet inside the
-project. The project then appears in no new overview, brief or answer. If today's brief was written
+To keep a project out, ask `/fleet` to exclude it (`--set-included "<name>" no`), or set its
+`included` cell to `no` by hand. The project then appears in no new overview, brief or answer. If today's brief was written
 before you excluded it, the brief is rebuilt without it the next time the hub opens or you ask for the
 brief. Dated briefs from earlier days keep what they held until `retention_days` prunes them.
 
